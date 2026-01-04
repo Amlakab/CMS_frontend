@@ -4,7 +4,7 @@ import { useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 
 export default function QRPage() {
-  const link = 'https://verdant-kataifi-3c5c1b.netlify.app/';
+  const link = 'https://cms-frontend-swart.vercel.app/';
   const qrRef = useRef<HTMLCanvasElement>(null);
 
   // Download QR as PNG
@@ -54,7 +54,7 @@ export default function QRPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-8 rounded-lg shadow-lg text-center">
         <h1 className="text-xl font-bold mb-6">
-          QR Code with Download & Print
+          Scan this QR Code to visit our website
         </h1>
 
         <QRCodeCanvas value={link} size={250} ref={qrRef} />
