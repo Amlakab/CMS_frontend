@@ -9,10 +9,10 @@ import {
   useMediaQuery, Pagination,
   MenuItem, Select, FormControl, InputLabel,
   IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, Button, Avatar,
-  FormControlLabel, Divider,
+  DialogActions, Button, Avatar, Divider,
   Stack, ToggleButton, ToggleButtonGroup,
-  Tooltip, Switch
+  Tooltip, Switch,
+  FormControlLabel
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/lib/theme-context';
@@ -49,6 +49,11 @@ interface Food {
   status: 'AVAILABLE' | 'UNAVAILABLE';
   created_at: string;
   updated_at: string;
+  imageData?: {
+    contentType: string;
+    fileName: string;
+    dataUrl?: string;
+  };
 }
 
 interface FoodStats {
@@ -59,7 +64,7 @@ interface FoodStats {
   totalViews: number;
   categoryStats: { _id: string; count: number; avgPrice: number }[];
   statusStats: { _id: string; count: number }[];
-  topViewedFoods: { _id: string; name: string; view: number; price: number; category: string }[];
+  topViewedFoods: { _id: string; name: string; view: number; price: number; category: string; image?: string }[];
   priceStats: { minPrice: number; maxPrice: number; avgPrice: number };
 }
 
@@ -278,6 +283,75 @@ const FoodManagementPage = () => {
     }
   ];
 
+  // Get API URL from environment or use relative path
+  const getApiUrl = () => {
+    // In development, use localhost:3001
+    // In production, use relative path or environment variable
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return process.env.NEXT_PUBLIC_API_URL;
+    }
+    if (typeof window !== 'undefined') {
+      // Client-side: use current origin
+      return window.location.origin.replace('3000', '3001');
+    }
+    // Server-side fallback
+    return 'http://localhost:3001';
+  };
+
+  // CORRECTED: Get image URL - handles both local and production environments
+  const getImageUrl = (food: Food): string | null => {
+    if (!food) return null;
+    
+    // If imageData has dataUrl (base64), use it directly
+    if (food.imageData?.dataUrl) {
+      return food.imageData.dataUrl;
+    }
+    
+    // If image field is a base64 string, use it directly
+    if (food.image?.startsWith('data:image')) {
+      return food.image;
+    }
+    
+    // If image field is a URL, use it
+    if (food.image?.startsWith('http')) {
+      return food.image;
+    }
+    
+    // If image field is a relative path, construct full URL
+    if (food.image?.startsWith('/uploads')) {
+      const baseUrl = getApiUrl();
+      return `${baseUrl}${food.image}`;
+    }
+    
+    // If image field exists but doesn't start with /uploads or http, assume it's a filename
+    if (food.image) {
+      const baseUrl = getApiUrl();
+      return `${baseUrl}/uploads/foods/${food.image}`;
+    }
+    
+    // If no image, return null
+    return null;
+  };
+
+  // Get placeholder image
+  const getPlaceholderImage = (text: string, color: string = '#007bff') => {
+    // Create a simple placeholder using canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 60;
+    canvas.height = 40;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = theme === 'dark' ? '#334155' : '#e5e7eb';
+      ctx.fillRect(0, 0, 60, 40);
+      ctx.fillStyle = color;
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text.charAt(0).toUpperCase(), 30, 20);
+    }
+    return canvas.toDataURL();
+  };
+
   const fetchFoods = useCallback(async () => {
     try {
       setLoading(true);
@@ -357,7 +431,9 @@ const FoodManagementPage = () => {
       quantity_available: food.quantity_available,
       status: food.status
     });
-    setImagePreview(food.image ? getImageUrl(food.image) : null);
+    // CORRECTED: Use getImageUrl to get the image URL
+    const imageUrl = getImageUrl(food);
+    setImagePreview(imageUrl);
     setImageFile(null);
     setOpenEditDialog(true);
   };
@@ -545,20 +621,6 @@ const FoodManagementPage = () => {
   const getCategoryLabel = (category: string) => {
     const cat = categories.find(c => c.value === category);
     return cat ? cat.label : category;
-  };
-
-  const getImageUrl = (imagePath: string | undefined): string | null => {
-    if (!imagePath) return null;
-    
-    if (imagePath.startsWith('http')) return imagePath;
-    
-    if (imagePath.startsWith('/uploads')) {
-      const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      return `${serverUrl}${imagePath}`;
-    }
-    
-    const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    return `${serverUrl}/uploads/foods/${imagePath}`;
   };
 
   const renderFormSection = (title: string, icon: React.ReactNode, content: React.ReactNode) => (
@@ -983,7 +1045,7 @@ const FoodManagementPage = () => {
                 gap: 3
               }}>
                 {foods.map((food) => {
-                  const imageUrl = getImageUrl(food.image);
+                  const imageUrl = getImageUrl(food);
                   
                   return (
                     <Card 
@@ -1029,8 +1091,7 @@ const FoodManagementPage = () => {
                             }}
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
-                              target.onerror = null;
-                              target.src = '/api/placeholder/400/250';
+                              target.src = getPlaceholderImage(food.name);
                             }}
                           />
                         ) : (
@@ -1287,7 +1348,7 @@ const FoodManagementPage = () => {
                     </TableHead>
                     <TableBody>
                       {foods.map((food) => {
-                        const imageUrl = getImageUrl(food.image);
+                        const imageUrl = getImageUrl(food);
                         
                         return (
                           <TableRow 
@@ -1307,7 +1368,8 @@ const FoodManagementPage = () => {
                                     height: 40,
                                     borderRadius: 1,
                                     overflow: 'hidden',
-                                    flexShrink: 0
+                                    flexShrink: 0,
+                                    position: 'relative'
                                   }}>
                                     <img 
                                       src={imageUrl} 
@@ -1319,8 +1381,7 @@ const FoodManagementPage = () => {
                                       }}
                                       onError={(e) => {
                                         const target = e.target as HTMLImageElement;
-                                        target.onerror = null;
-                                        target.src = '/api/placeholder/60/40';
+                                        target.src = getPlaceholderImage(food.name);
                                       }}
                                     />
                                   </Box>
@@ -1867,20 +1928,23 @@ const FoodManagementPage = () => {
                     <Box sx={{ 
                       width: '100%',
                       height: { xs: 200, md: 300 },
-                      overflow: 'hidden'
+                      overflow: 'hidden',
+                      backgroundColor: theme === 'dark' ? '#1e293b' : '#f8f9fa',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
                     }}>
                       <img 
-                        src={getImageUrl(selectedFood.image) || ''} 
+                        src={getImageUrl(selectedFood) || getPlaceholderImage(selectedFood.name)} 
                         alt={selectedFood.name}
                         style={{ 
                           width: '100%', 
                           height: '100%', 
-                          objectFit: 'cover' 
+                          objectFit: 'contain' 
                         }}
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
-                          target.onerror = null;
-                          target.src = '/api/placeholder/800/400';
+                          target.src = getPlaceholderImage(selectedFood.name, theme === 'dark' ? '#00ffff' : '#007bff');
                         }}
                       />
                     </Box>
