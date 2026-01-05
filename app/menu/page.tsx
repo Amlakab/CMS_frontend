@@ -37,11 +37,6 @@ interface Food {
   status: 'AVAILABLE' | 'UNAVAILABLE';
   created_at: string;
   updated_at: string;
-  imageData?: {
-    contentType: string;
-    fileName: string;
-    dataUrl?: string;
-  };
 }
 
 interface PaginationData {
@@ -110,73 +105,6 @@ const PublicFoodPage = () => {
   });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  // Get API URL from environment or use relative path
-  const getApiUrl = () => {
-    if (process.env.NEXT_PUBLIC_API_URL) {
-      return process.env.NEXT_PUBLIC_API_URL;
-    }
-    if (typeof window !== 'undefined') {
-      // Client-side: use current origin
-      return window.location.origin.replace('3000', '3001');
-    }
-    // Server-side fallback
-    return 'http://localhost:3001';
-  };
-
-  // CORRECTED: Get image URL - handles both local and production environments
-  const getImageUrl = (food: Food): string | null => {
-    if (!food) return null;
-    
-    // If imageData has dataUrl (base64), use it directly
-    if (food.imageData?.dataUrl) {
-      return food.imageData.dataUrl;
-    }
-    
-    // If image field is a base64 string, use it directly
-    if (food.image?.startsWith('data:image')) {
-      return food.image;
-    }
-    
-    // If image field is a URL, use it
-    if (food.image?.startsWith('http')) {
-      return food.image;
-    }
-    
-    // If image field is a relative path, construct full URL
-    if (food.image?.startsWith('/uploads')) {
-      const baseUrl = getApiUrl();
-      return `${baseUrl}${food.image}`;
-    }
-    
-    // If image field exists but doesn't start with /uploads or http, assume it's a filename
-    if (food.image) {
-      const baseUrl = getApiUrl();
-      return `${baseUrl}/uploads/foods/${food.image}`;
-    }
-    
-    // If no image, return null
-    return null;
-  };
-
-  // Get placeholder image
-  const getPlaceholderImage = (text: string, color: string = '#007bff') => {
-    // Create a simple placeholder using canvas
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 250;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = theme === 'dark' ? '#334155' : '#e5e7eb';
-      ctx.fillRect(0, 0, 400, 250);
-      ctx.fillStyle = color;
-      ctx.font = '48px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text.charAt(0).toUpperCase(), 200, 125);
-    }
-    return canvas.toDataURL();
-  };
 
   const fetchAvailableFoods = async (forList: boolean = false) => {
     try {
@@ -347,6 +275,20 @@ const PublicFoodPage = () => {
       style: 'currency',
       currency: 'USD'
     }).format(price);
+  };
+
+  const getImageUrl = (imagePath: string | undefined): string => {
+    if (!imagePath) return '/api/placeholder/400/250';
+    
+    if (imagePath.startsWith('http')) return imagePath;
+    
+    const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    
+    if (imagePath.startsWith('/uploads')) {
+      return `${serverUrl}${imagePath}`;
+    }
+    
+    return `${serverUrl}/uploads/foods/${imagePath}`;
   };
 
   const getCategoryLabel = (category: string) => {
@@ -596,233 +538,228 @@ const PublicFoodPage = () => {
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {foods.map((food, index) => {
-                    const imageUrl = getImageUrl(food);
-                    const placeholder = getPlaceholderImage(food.name, theme === 'dark' ? '#00ffff' : '#007bff');
-                    
-                    return (
-                      <motion.div
-                        key={food._id}
-                        id={`food-${food._id}`}
-                        initial={{ y: 50, opacity: 0 }}
-                        whileInView={{ y: 0, opacity: 1 }}
-                        transition={{ duration: 0.5, delay: index * 0.1 }}
-                        viewport={{ once: true }}
-                        whileHover={{ y: -5 }}
-                        className="group"
-                      >
-                        <Card sx={{ 
-                          height: '100%',
-                          borderRadius: 2,
+                  {foods.map((food, index) => (
+                    <motion.div
+                      key={food._id}
+                      id={`food-${food._id}`}
+                      initial={{ y: 50, opacity: 0 }}
+                      whileInView={{ y: 0, opacity: 1 }}
+                      transition={{ duration: 0.5, delay: index * 0.1 }}
+                      viewport={{ once: true }}
+                      whileHover={{ y: -5 }}
+                      className="group"
+                    >
+                      <Card sx={{ 
+                        height: '100%',
+                        borderRadius: 2,
+                        boxShadow: theme === 'dark' 
+                          ? '0 2px 8px rgba(0,0,0,0.3)' 
+                          : '0 2px 8px rgba(0,0,0,0.1)',
+                        border: theme === 'dark' 
+                          ? '1px solid #334155' 
+                          : '1px solid #e5e7eb',
+                        backgroundColor: theme === 'dark' ? '#0f172a80' : 'white',
+                        backdropFilter: theme === 'dark' ? 'blur(10px)' : 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
                           boxShadow: theme === 'dark' 
-                            ? '0 2px 8px rgba(0,0,0,0.3)' 
-                            : '0 2px 8px rgba(0,0,0,0.1)',
-                          border: theme === 'dark' 
-                            ? '1px solid #334155' 
-                            : '1px solid #e5e7eb',
-                          backgroundColor: theme === 'dark' ? '#0f172a80' : 'white',
-                          backdropFilter: theme === 'dark' ? 'blur(10px)' : 'none',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          transition: 'transform 0.2s, box-shadow 0.2s',
-                          '&:hover': {
-                            transform: 'translateY(-4px)',
-                            boxShadow: theme === 'dark' 
-                              ? '0 8px 24px rgba(0, 255, 255, 0.2)' 
-                              : '0 8px 24px rgba(37, 99, 235, 0.2)'
-                          }
+                            ? '0 8px 24px rgba(0, 255, 255, 0.2)' 
+                            : '0 8px 24px rgba(37, 99, 235, 0.2)'
+                        }
+                      }}>
+                        {/* Food Image */}
+                        <Box sx={{ 
+                          position: 'relative',
+                          height: 180,
+                          overflow: 'hidden',
+                          borderTopLeftRadius: 8,
+                          borderTopRightRadius: 8
                         }}>
-                          {/* Food Image */}
-                          <Box sx={{ 
-                            position: 'relative',
-                            height: 180,
-                            overflow: 'hidden',
-                            borderTopLeftRadius: 8,
-                            borderTopRightRadius: 8
-                          }}>
-                            <img
-                              src={imageUrl || placeholder}
-                              alt={food.name}
-                              style={{ 
-                                width: '100%', 
-                                height: '100%', 
-                                objectFit: 'cover',
-                                transition: 'transform 0.3s'
-                              }}
-                              className="group-hover:scale-105"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.onerror = null;
-                                target.src = placeholder;
-                              }}
-                            />
-                            
-                            {/* Category Badge */}
-                            <Chip
-                              label={getCategoryLabel(food.category)}
-                              size="small"
-                              sx={{ 
-                                position: 'absolute',
-                                top: 8,
-                                right: 8,
-                                height: 24,
-                                fontSize: '0.7rem',
-                                backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                                color: theme === 'dark' ? '#a8b2d1' : '#666666'
-                              }}
-                            />
-                            
-                            {/* Stock Status Badge */}
-                            <Chip
-                              label={food.quantity_available ? 'In Stock' : 'Out of Stock'}
-                              size="small"
-                              sx={{ 
-                                position: 'absolute',
-                                top: 8,
-                                left: 8,
-                                height: 24,
-                                fontSize: '0.7rem',
-                                backgroundColor: food.quantity_available 
-                                  ? (theme === 'dark' ? '#00ff0020' : '#28a74520')
-                                  : (theme === 'dark' ? '#ff000020' : '#dc354520'),
-                                color: food.quantity_available 
-                                  ? (theme === 'dark' ? '#00ff00' : '#28a745')
-                                  : (theme === 'dark' ? '#ff0000' : '#dc3545')
-                              }}
-                            />
-                          </Box>
+                          <img
+                            src={getImageUrl(food.image)}
+                            alt={food.name}
+                            style={{ 
+                              width: '100%', 
+                              height: '100%', 
+                              objectFit: 'cover',
+                              transition: 'transform 0.3s'
+                            }}
+                            className="group-hover:scale-105"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.onerror = null;
+                              target.src = '/api/placeholder/400/250';
+                            }}
+                          />
                           
-                          <CardContent sx={{ p: 3, flexGrow: 1 }}>
-                            {/* Title */}
-                            <Typography 
-                              variant="h6" 
-                              sx={{ 
-                                fontWeight: 'bold',
-                                color: theme === 'dark' ? '#ccd6f6' : '#333333',
-                                mb: 1,
-                                display: '-webkit-box',
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                lineHeight: 1.3,
-                                fontSize: '1.1rem'
-                              }}
-                            >
-                              {food.name}
-                            </Typography>
-                            
-                            {/* Description */}
-                            <Typography 
-                              variant="body2" 
-                              color={theme === 'dark' ? '#a8b2d1' : '#666666'}
-                              sx={{ 
-                                mb: 2,
-                                display: '-webkit-box',
-                                WebkitLineClamp: 3,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                fontSize: '0.9rem'
-                              }}
-                            >
-                              {food.description}
-                            </Typography>
-                            
-                            {/* Price and Stats */}
-                            <Box sx={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              mt: 'auto',
-                              pt: 2,
-                              borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
-                            }}>
-                              <Typography variant="h6" sx={{ 
-                                fontWeight: 'bold',
-                                color: theme === 'dark' ? '#00ffff' : '#007bff'
-                              }}>
-                                {formatPrice(food.price)}
-                              </Typography>
-                              
-                              <Box sx={{ display: 'flex', gap: 1.5 }}>
-                                <Tooltip title="Views">
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <RemoveRedEye fontSize="small" sx={{ fontSize: '0.9rem', color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                                    <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                      {food.view}
-                                    </Typography>
-                                  </Box>
-                                </Tooltip>
-                              </Box>
-                            </Box>
-                          </CardContent>
+                          {/* Category Badge */}
+                          <Chip
+                            label={getCategoryLabel(food.category)}
+                            size="small"
+                            sx={{ 
+                              position: 'absolute',
+                              top: 8,
+                              right: 8,
+                              height: 24,
+                              fontSize: '0.7rem',
+                              backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                              color: theme === 'dark' ? '#a8b2d1' : '#666666'
+                            }}
+                          />
                           
-                          {/* Action Buttons */}
+                          {/* Stock Status Badge */}
+                          <Chip
+                            label={food.quantity_available ? 'In Stock' : 'Out of Stock'}
+                            size="small"
+                            sx={{ 
+                              position: 'absolute',
+                              top: 8,
+                              left: 8,
+                              height: 24,
+                              fontSize: '0.7rem',
+                              backgroundColor: food.quantity_available 
+                                ? (theme === 'dark' ? '#00ff0020' : '#28a74520')
+                                : (theme === 'dark' ? '#ff000020' : '#dc354520'),
+                              color: food.quantity_available 
+                                ? (theme === 'dark' ? '#00ff00' : '#28a745')
+                                : (theme === 'dark' ? '#ff0000' : '#dc3545')
+                            }}
+                          />
+                        </Box>
+                        
+                        <CardContent sx={{ p: 3, flexGrow: 1 }}>
+                          {/* Title */}
+                          <Typography 
+                            variant="h6" 
+                            sx={{ 
+                              fontWeight: 'bold',
+                              color: theme === 'dark' ? '#ccd6f6' : '#333333',
+                              mb: 1,
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              lineHeight: 1.3,
+                              fontSize: '1.1rem'
+                            }}
+                          >
+                            {food.name}
+                          </Typography>
+                          
+                          {/* Description */}
+                          <Typography 
+                            variant="body2" 
+                            color={theme === 'dark' ? '#a8b2d1' : '#666666'}
+                            sx={{ 
+                              mb: 2,
+                              display: '-webkit-box',
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              fontSize: '0.9rem'
+                            }}
+                          >
+                            {food.description}
+                          </Typography>
+                          
+                          {/* Price and Stats */}
                           <Box sx={{ 
-                            p: 2, 
-                            pt: 0,
                             display: 'flex', 
-                            gap: 2,
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            mt: 'auto',
+                            pt: 2,
                             borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
                           }}>
-                            <Button
-                              size="small"
-                              fullWidth
-                              variant="outlined"
-                              startIcon={<Visibility fontSize="small" />}
-                              onClick={() => handleOpenViewDialog(food)}
-                              disabled={!food.quantity_available}
-                              sx={{
-                                borderRadius: 1,
-                                borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
-                                color: theme === 'dark' ? '#00ffff' : '#007bff',
-                                fontSize: '0.75rem',
-                                py: 0.5,
-                                '&:hover': {
-                                  backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
-                                },
-                                '&.Mui-disabled': {
-                                  borderColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                                  color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
-                                }
-                              }}
-                            >
-                              View Details
-                            </Button>
+                            <Typography variant="h6" sx={{ 
+                              fontWeight: 'bold',
+                              color: theme === 'dark' ? '#00ffff' : '#007bff'
+                            }}>
+                              {formatPrice(food.price)}
+                            </Typography>
                             
-                            <Button
-                              size="small"
-                              fullWidth
-                              variant="contained"
-                              startIcon={<ShoppingCart fontSize="small" />}
-                              onClick={() => handleOpenOrderDialog(food)}
-                              disabled={!food.quantity_available}
-                              sx={{
-                                borderRadius: 1,
-                                background: theme === 'dark'
-                                  ? 'linear-gradient(135deg, #00ff00, #00b300)'
-                                  : 'linear-gradient(135deg, #28a745, #218838)',
-                                fontSize: '0.75rem',
-                                py: 0.5,
-                                '&:hover': {
-                                  background: theme === 'dark'
-                                    ? 'linear-gradient(135deg, #00b300, #008000)'
-                                    : 'linear-gradient(135deg, #218838, #1e7e34)'
-                                },
-                                '&.Mui-disabled': {
-                                  background: theme === 'dark' ? '#334155' : '#e5e7eb',
-                                  color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
-                                }
-                              }}
-                            >
-                              Order Now
-                            </Button>
+                            <Box sx={{ display: 'flex', gap: 1.5 }}>
+                              <Tooltip title="Views">
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <RemoveRedEye fontSize="small" sx={{ fontSize: '0.9rem', color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
+                                  <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
+                                    {food.view}
+                                  </Typography>
+                                </Box>
+                              </Tooltip>
+                            </Box>
                           </Box>
-                        </Card>
-                      </motion.div>
-                    );
-                  })}
+                        </CardContent>
+                        
+                        {/* Action Buttons */}
+                        <Box sx={{ 
+                          p: 2, 
+                          pt: 0,
+                          display: 'flex', 
+                          gap: 2,
+                          borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
+                        }}>
+                          <Button
+                            size="small"
+                            fullWidth
+                            variant="outlined"
+                            startIcon={<Visibility fontSize="small" />}
+                            onClick={() => handleOpenViewDialog(food)}
+                            disabled={!food.quantity_available}
+                            sx={{
+                              borderRadius: 1,
+                              borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+                              color: theme === 'dark' ? '#00ffff' : '#007bff',
+                              fontSize: '0.75rem',
+                              py: 0.5,
+                              '&:hover': {
+                                backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                              },
+                              '&.Mui-disabled': {
+                                borderColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
+                              }
+                            }}
+                          >
+                            View Details
+                          </Button>
+                          
+                          <Button
+                            size="small"
+                            fullWidth
+                            variant="contained"
+                            startIcon={<ShoppingCart fontSize="small" />}
+                            onClick={() => handleOpenOrderDialog(food)}
+                            disabled={!food.quantity_available}
+                            sx={{
+                              borderRadius: 1,
+                              background: theme === 'dark'
+                                ? 'linear-gradient(135deg, #00ff00, #00b300)'
+                                : 'linear-gradient(135deg, #28a745, #218838)',
+                              fontSize: '0.75rem',
+                              py: 0.5,
+                              '&:hover': {
+                                background: theme === 'dark'
+                                  ? 'linear-gradient(135deg, #00b300, #008000)'
+                                  : 'linear-gradient(135deg, #218838, #1e7e34)'
+                              },
+                              '&.Mui-disabled': {
+                                background: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
+                              }
+                            }}
+                          >
+                            Order Now
+                          </Button>
+                        </Box>
+                      </Card>
+                    </motion.div>
+                  ))}
                 </div>
 
                 {/* Pagination */}
@@ -885,128 +822,130 @@ const PublicFoodPage = () => {
         </section>
 
         {/* Horizontal Food Name List Section */}
-        {allFoods.length > 0 && (
-          <section className={`py-8 px-4 ${
-            theme === 'dark' ? 'bg-[#0f172a80]' : 'bg-gray-50'
+
+{/* Horizontal Food Name List Section */}
+{allFoods.length > 0 && (
+  <section className={`py-8 px-4 ${
+    theme === 'dark' ? 'bg-[#0f172a80]' : 'bg-gray-50'
+  }`}>
+    <div className="container mx-auto">
+      <motion.div
+        initial={{ y: 50, opacity: 0 }}
+        whileInView={{ y: 0, opacity: 1 }}
+        transition={{ duration: 1 }}
+        viewport={{ once: true }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className={`text-2xl font-bold ${
+            theme === 'dark' ? 'text-[#00ffff]' : 'text-[#007bff]'
           }`}>
-            <div className="container mx-auto">
+            All Available Foods
+          </h2>
+          
+          <div className="flex gap-2">
+            <IconButton
+              onClick={() => scrollHorizontalList('left')}
+              sx={{
+                color: theme === 'dark' ? '#00ffff' : '#007bff',
+                border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
+                '&:hover': {
+                  backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                }
+              }}
+            >
+              <NavigateBefore />
+            </IconButton>
+            <IconButton
+              onClick={() => scrollHorizontalList('right')}
+              sx={{
+                color: theme === 'dark' ? '#00ffff' : '#007bff',
+                border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
+                '&:hover': {
+                  backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                }
+              }}
+            >
+              <NavigateNext />
+            </IconButton>
+          </div>
+        </div>
+
+        <div className="relative">
+          <div
+            ref={scrollContainerRef}
+            className="flex overflow-x-auto gap-4 py-4 scroll-smooth hide-scrollbar"
+          >
+            {allFoods.map((food) => (
               <motion.div
-                initial={{ y: 50, opacity: 0 }}
-                whileInView={{ y: 0, opacity: 1 }}
-                transition={{ duration: 1 }}
-                viewport={{ once: true }}
+                key={food._id}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3 }}
               >
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className={`text-2xl font-bold ${
-                    theme === 'dark' ? 'text-[#00ffff]' : 'text-[#007bff]'
-                  }`}>
-                    All Available Foods
-                  </h2>
-                  
-                  <div className="flex gap-2">
-                    <IconButton
-                      onClick={() => scrollHorizontalList('left')}
+                <button
+                  onClick={() => handleFoodNameClick(food)}
+                  className={`flex-shrink-0 px-6 py-3 rounded-lg transition-all duration-300 ${
+                    theme === 'dark' 
+                      ? 'bg-[#1e293b] hover:bg-[#334155] text-white' 
+                      : 'bg-white hover:bg-gray-100 text-gray-800'
+                  } shadow-md border ${
+                    theme === 'dark' 
+                      ? 'border-[#334155] hover:border-[#00ffff]' 
+                      : 'border-gray-200 hover:border-[#007bff]'
+                  }`}
+                  style={{
+                    minWidth: 'fit-content',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <Restaurant sx={{ 
+                      fontSize: 20,
+                      color: theme === 'dark' ? '#00ffff' : '#007bff' 
+                    }} />
+                    <span className="font-medium text-sm md:text-base">
+                      {food.name}
+                    </span>
+                    <Chip
+                      label={formatPrice(food.price)}
+                      size="small"
                       sx={{
-                        color: theme === 'dark' ? '#00ffff' : '#007bff',
-                        border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
-                        '&:hover': {
-                          backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
-                        }
+                        height: 20,
+                        fontSize: '0.7rem',
+                        backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                        color: theme === 'dark' ? '#a8b2d1' : '#666666'
                       }}
-                    >
-                      <NavigateBefore />
-                    </IconButton>
-                    <IconButton
-                      onClick={() => scrollHorizontalList('right')}
-                      sx={{
-                        color: theme === 'dark' ? '#00ffff' : '#007bff',
-                        border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
-                        '&:hover': {
-                          backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
-                        }
-                      }}
-                    >
-                      <NavigateNext />
-                    </IconButton>
+                    />
                   </div>
-                </div>
-
-                <div className="relative">
-                  <div
-                    ref={scrollContainerRef}
-                    className="flex overflow-x-auto gap-4 py-4 scroll-smooth hide-scrollbar"
-                  >
-                    {allFoods.map((food) => (
-                      <motion.div
-                        key={food._id}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <button
-                          onClick={() => handleFoodNameClick(food)}
-                          className={`flex-shrink-0 px-6 py-3 rounded-lg transition-all duration-300 ${
-                            theme === 'dark' 
-                              ? 'bg-[#1e293b] hover:bg-[#334155] text-white' 
-                              : 'bg-white hover:bg-gray-100 text-gray-800'
-                          } shadow-md border ${
-                            theme === 'dark' 
-                              ? 'border-[#334155] hover:border-[#00ffff]' 
-                              : 'border-gray-200 hover:border-[#007bff]'
-                          }`}
-                          style={{
-                            minWidth: 'fit-content',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Restaurant sx={{ 
-                              fontSize: 20,
-                              color: theme === 'dark' ? '#00ffff' : '#007bff' 
-                            }} />
-                            <span className="font-medium text-sm md:text-base">
-                              {food.name}
-                            </span>
-                            <Chip
-                              label={formatPrice(food.price)}
-                              size="small"
-                              sx={{
-                                height: 20,
-                                fontSize: '0.7rem',
-                                backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                                color: theme === 'dark' ? '#a8b2d1' : '#666666'
-                              }}
-                            />
-                          </div>
-                        </button>
-                      </motion.div>
-                    ))}
-                  </div>
-
-                  {/* Gradient fade effects on sides */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-8 pointer-events-none ${
-                    theme === 'dark'
-                      ? 'bg-gradient-to-r from-[#0f172a80] to-transparent'
-                      : 'bg-gradient-to-r from-gray-50 to-transparent'
-                  }`} />
-                  <div className={`absolute right-0 top-0 bottom-0 w-8 pointer-events-none ${
-                    theme === 'dark'
-                      ? 'bg-gradient-to-l from-[#0f172a80] to-transparent'
-                      : 'bg-gradient-to-l from-gray-50 to-transparent'
-                  }`} />
-                </div>
-
-                <div className="flex items-center justify-center mt-4">
-                  <Typography variant="caption" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
-                    Scroll or use arrows to see more foods • Click on any food to jump to it in the grid
-                  </Typography>
-                </div>
+                </button>
               </motion.div>
-            </div>
-          </section>
-        )}
+            ))}
+          </div>
+
+          {/* Gradient fade effects on sides */}
+          <div className={`absolute left-0 top-0 bottom-0 w-8 pointer-events-none ${
+            theme === 'dark'
+              ? 'bg-gradient-to-r from-[#0f172a80] to-transparent'
+              : 'bg-gradient-to-r from-gray-50 to-transparent'
+          }`} />
+          <div className={`absolute right-0 top-0 bottom-0 w-8 pointer-events-none ${
+            theme === 'dark'
+              ? 'bg-gradient-to-l from-[#0f172a80] to-transparent'
+              : 'bg-gradient-to-l from-gray-50 to-transparent'
+          }`} />
+        </div>
+
+        <div className="flex items-center justify-center mt-4">
+          <Typography variant="caption" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
+            Scroll or use arrows to see more foods • Click on any food to jump to it in the grid
+          </Typography>
+        </div>
+      </motion.div>
+    </div>
+  </section>
+)}
 
         {/* Categories Section */}
         <section className={`py-12 px-4 ${
@@ -1100,7 +1039,7 @@ const PublicFoodPage = () => {
             </DialogTitle>
             
             <DialogContent sx={{ p: 0, overflowY: 'auto' }}>
-              {/* Food Image - FIXED: Using corrected image handling */}
+              {/* Food Image - FIXED: Added padding and proper objectFit */}
               {selectedFood.image && (
                 <Box sx={{ 
                   width: '100%',
@@ -1112,15 +1051,15 @@ const PublicFoodPage = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: theme === 'dark' ? '#0a192f' : '#f8f9fa',
-                  p: { xs: 1, md: 2 }
+                  p: { xs: 1, md: 2 } // Added padding
                 }}>
                   <img
-                    src={getImageUrl(selectedFood) || getPlaceholderImage(selectedFood.name, theme === 'dark' ? '#00ffff' : '#007bff')}
+                    src={getImageUrl(selectedFood.image)}
                     alt={selectedFood.name}
                     style={{ 
                       maxWidth: '100%',
                       maxHeight: '100%',
-                      objectFit: 'contain',
+                      objectFit: 'contain', // Changed from 'cover' to 'contain'
                       borderRadius: '8px',
                       boxShadow: theme === 'dark' 
                         ? '0 4px 12px rgba(0,0,0,0.3)' 
@@ -1128,7 +1067,8 @@ const PublicFoodPage = () => {
                     }}
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
-                      target.src = getPlaceholderImage(selectedFood.name, theme === 'dark' ? '#00ffff' : '#007bff');
+                      target.onerror = null;
+                      target.src = '/api/placeholder/1200/400';
                     }}
                   />
                 </Box>
