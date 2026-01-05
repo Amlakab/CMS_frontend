@@ -56,11 +56,6 @@ interface Food {
   status: 'AVAILABLE' | 'UNAVAILABLE';
   created_at: string;
   updated_at: string;
-  imageData?: {
-    contentType: string;
-    fileName: string;
-    dataUrl?: string;
-  };
 }
 
 // Interface for Contact Form
@@ -131,71 +126,19 @@ export default function Home() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Get API URL from environment or use relative path
-  const getApiUrl = () => {
-    if (process.env.NEXT_PUBLIC_API_URL) {
-      return process.env.NEXT_PUBLIC_API_URL;
-    }
-    if (typeof window !== 'undefined') {
-      // Client-side: use current origin
-      return window.location.origin.replace('3000', '3001');
-    }
-    // Server-side fallback
-    return 'http://localhost:3001';
-  };
-
-  // CORRECTED: Get image URL - handles both local and production environments
-  const getImageUrl = (food: Food): string | null => {
-    if (!food) return null;
+  // Helper function to get image URL - Similar to FoodPage
+  const getImageUrl = (imagePath: string | undefined): string => {
+    if (!imagePath) return '/api/placeholder/400/250';
     
-    // If imageData has dataUrl (base64), use it directly
-    if (food.imageData?.dataUrl) {
-      return food.imageData.dataUrl;
+    if (imagePath.startsWith('http')) return imagePath;
+    
+    const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    
+    if (imagePath.startsWith('/uploads')) {
+      return `${serverUrl}${imagePath}`;
     }
     
-    // If image field is a base64 string, use it directly
-    if (food.image?.startsWith('data:image')) {
-      return food.image;
-    }
-    
-    // If image field is a URL, use it
-    if (food.image?.startsWith('http')) {
-      return food.image;
-    }
-    
-    // If image field is a relative path, construct full URL
-    if (food.image?.startsWith('/uploads')) {
-      const baseUrl = getApiUrl();
-      return `${baseUrl}${food.image}`;
-    }
-    
-    // If image field exists but doesn't start with /uploads or http, assume it's a filename
-    if (food.image) {
-      const baseUrl = getApiUrl();
-      return `${baseUrl}/uploads/foods/${food.image}`;
-    }
-    
-    // If no image, return null
-    return null;
-  };
-
-  // Get placeholder image
-  const getPlaceholderImage = (text: string, color: string = '#007bff') => {
-    // Create a simple placeholder using canvas
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 250;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = theme === 'dark' ? '#334155' : '#e5e7eb';
-      ctx.fillRect(0, 0, 400, 250);
-      ctx.fillStyle = color;
-      ctx.font = '48px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text.charAt(0).toUpperCase(), 200, 125);
-    }
-    return canvas.toDataURL();
+    return `${serverUrl}/uploads/foods/${imagePath}`;
   };
 
   // Format price function
@@ -550,7 +493,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Featured Foods Section - UPDATED with corrected image handling */}
+        {/* Featured Foods Section - Same as before */}
         <section className={`py-16 px-4 ${theme === 'dark' ? 'bg-transparent' : 'bg-background'}`}>
           <div className="container mx-auto">
             <h2 className={`text-3xl font-bold text-center mb-12 ${theme === 'dark' ? 'text-white' : 'text-text-primary'}`}>
@@ -572,125 +515,120 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {featuredFoods.map((food, index) => {
-                  const imageUrl = getImageUrl(food);
-                  const placeholder = getPlaceholderImage(food.name, theme === 'dark' ? '#00ffff' : '#007bff');
-                  
-                  return (
-                    <motion.div
-                      key={food._id}
-                      initial={{ y: 50, opacity: 0 }}
-                      whileInView={{ y: 0, opacity: 1 }}
-                      transition={{ duration: 0.5, delay: index * 0.1 }}
-                      viewport={{ once: true }}
-                      whileHover={{ y: -5 }}
-                      className={`rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 ${
-                        theme === 'dark' ? 'bg-surface/30 backdrop-blur-sm' : 'bg-surface'
-                      }`}
-                    >
-                      <Link href="/menu" className="block">
-                        {/* Food Image - UPDATED with corrected image handling */}
-                        <div className="relative h-48 overflow-hidden">
-                          <img
-                            src={imageUrl || placeholder}
-                            alt={food.name}
-                            style={{ 
-                              width: '100%', 
-                              height: '100%', 
-                              objectFit: 'cover',
-                              transition: 'transform 0.3s'
-                            }}
-                            className="group-hover:scale-105"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.onerror = null;
-                              target.src = placeholder;
-                            }}
-                          />
-                          {/* Category Badge */}
-                          <div className="absolute top-2 left-2">
-                            <span className={`px-2 py-1 text-xs font-bold ${
-                              theme === 'dark' 
-                                ? 'bg-gray-800 text-gray-300' 
-                                : 'bg-gray-100 text-gray-600'
-                            } rounded`}>
-                              {getCategoryLabel(food.category)}
+                {featuredFoods.map((food, index) => (
+                  <motion.div
+                    key={food._id}
+                    initial={{ y: 50, opacity: 0 }}
+                    whileInView={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                    viewport={{ once: true }}
+                    whileHover={{ y: -5 }}
+                    className={`rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 ${
+                      theme === 'dark' ? 'bg-surface/30 backdrop-blur-sm' : 'bg-surface'
+                    }`}
+                  >
+                    <Link href="/menu" className="block">
+                      {/* Food Image */}
+                      <div className="relative h-48 overflow-hidden">
+                        <img
+                          src={getImageUrl(food.image)}
+                          alt={food.name}
+                          style={{ 
+                            width: '100%', 
+                            height: '100%', 
+                            objectFit: 'cover',
+                            transition: 'transform 0.3s'
+                          }}
+                          className="group-hover:scale-105"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.onerror = null;
+                            target.src = '/api/placeholder/400/250';
+                          }}
+                        />
+                        {/* Category Badge */}
+                        <div className="absolute top-2 left-2">
+                          <span className={`px-2 py-1 text-xs font-bold ${
+                            theme === 'dark' 
+                              ? 'bg-gray-800 text-gray-300' 
+                              : 'bg-gray-100 text-gray-600'
+                          } rounded`}>
+                            {getCategoryLabel(food.category)}
+                          </span>
+                        </div>
+                        {/* Popular Badge */}
+                        {food.view > 50 && (
+                          <div className="absolute top-2 right-2">
+                            <span className="px-2 py-1 text-xs font-bold bg-yellow-500 text-gray-900 rounded flex items-center gap-1">
+                              <FaFire size={10} /> Popular
                             </span>
                           </div>
-                          {/* Popular Badge */}
-                          {food.view > 50 && (
-                            <div className="absolute top-2 right-2">
-                              <span className="px-2 py-1 text-xs font-bold bg-yellow-500 text-gray-900 rounded flex items-center gap-1">
-                                <FaFire size={10} /> Popular
+                        )}
+                      </div>
+                      <div className="p-6">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className={`text-lg font-semibold ${
+                            theme === 'dark' ? 'text-white' : 'text-text-primary'
+                          }`}>
+                            {food.name}
+                          </h3>
+                          <span className={`text-lg font-bold ${
+                            theme === 'dark' ? 'text-orange-400' : 'text-orange-600'
+                          }`}>
+                            {formatPrice(food.price)}
+                          </span>
+                        </div>
+                        <p className={`text-base mb-3 ${
+                          theme === 'dark' ? 'text-gray-300' : 'text-text-secondary'
+                        }`}>
+                          {food.description.length > 100 
+                            ? `${food.description.substring(0, 100)}...` 
+                            : food.description}
+                        </p>
+                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center">
+                              <FaStar className="text-yellow-500 mr-1" />
+                              <span className={`text-sm ${
+                                theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                              }`}>
+                                {food.view} views
                               </span>
                             </div>
-                          )}
-                        </div>
-                        <div className="p-6">
-                          <div className="flex items-center justify-between mb-3">
-                            <h3 className={`text-lg font-semibold ${
-                              theme === 'dark' ? 'text-white' : 'text-text-primary'
+                            <div className={`flex items-center ${
+                              food.quantity_available 
+                                ? theme === 'dark' ? 'text-green-400' : 'text-green-600'
+                                : theme === 'dark' ? 'text-red-400' : 'text-red-600'
                             }`}>
-                              {food.name}
-                            </h3>
-                            <span className={`text-lg font-bold ${
-                              theme === 'dark' ? 'text-orange-400' : 'text-orange-600'
-                            }`}>
-                              {formatPrice(food.price)}
-                            </span>
-                          </div>
-                          <p className={`text-base mb-3 ${
-                            theme === 'dark' ? 'text-gray-300' : 'text-text-secondary'
-                          }`}>
-                            {food.description.length > 100 
-                              ? `${food.description.substring(0, 100)}...` 
-                              : food.description}
-                          </p>
-                          <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center gap-4">
-                              <div className="flex items-center">
-                                <FaStar className="text-yellow-500 mr-1" />
-                                <span className={`text-sm ${
-                                  theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                                }`}>
-                                  {food.view} views
-                                </span>
-                              </div>
-                              <div className={`flex items-center ${
+                              <div className={`w-2 h-2 rounded-full mr-1 ${
                                 food.quantity_available 
-                                  ? theme === 'dark' ? 'text-green-400' : 'text-green-600'
-                                  : theme === 'dark' ? 'text-red-400' : 'text-red-600'
-                              }`}>
-                                <div className={`w-2 h-2 rounded-full mr-1 ${
-                                  food.quantity_available 
-                                    ? theme === 'dark' ? 'bg-green-400' : 'bg-green-600'
-                                    : theme === 'dark' ? 'bg-red-400' : 'bg-red-600'
-                                }`}></div>
-                                <span className="text-sm">
-                                  {food.quantity_available ? 'In Stock' : 'Out of Stock'}
-                                </span>
-                              </div>
+                                  ? theme === 'dark' ? 'bg-green-400' : 'bg-green-600'
+                                  : theme === 'dark' ? 'bg-red-400' : 'bg-red-600'
+                              }`}></div>
+                              <span className="text-sm">
+                                {food.quantity_available ? 'In Stock' : 'Out of Stock'}
+                              </span>
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                // Handle quick order
-                                window.location.href = `/menu?food=${food._id}`;
-                              }}
-                              className={`px-3 py-1 rounded text-sm font-medium ${
-                                theme === 'dark'
-                                  ? 'bg-orange-600 hover:bg-orange-700 text-white'
-                                  : 'bg-orange-500 hover:bg-orange-600 text-white'
-                              } transition-colors duration-300 flex items-center gap-1`}
-                            >
-                              <FaShoppingCart size={12} /> Order
-                            </button>
                           </div>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              // Handle quick order
+                              window.location.href = `/menu?food=${food._id}`;
+                            }}
+                            className={`px-3 py-1 rounded text-sm font-medium ${
+                              theme === 'dark'
+                                ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                                : 'bg-orange-500 hover:bg-orange-600 text-white'
+                            } transition-colors duration-300 flex items-center gap-1`}
+                          >
+                            <FaShoppingCart size={12} /> Order
+                          </button>
                         </div>
-                      </Link>
-                    </motion.div>
-                  );
-                })}
+                      </div>
+                    </Link>
+                  </motion.div>
+                ))}
               </div>
             )}
             <div className="text-center mt-12">
@@ -769,7 +707,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Contact Section - Same as before */}
+        {/* Contact Section - UPDATED with functional form */}
         <section className={`py-16 px-4 ${theme === 'dark' ? 'bg-transparent' : 'bg-background'}`}>
           <div className="container mx-auto">
             <h2 className={`text-3xl font-bold text-center mb-12 ${theme === 'dark' ? 'text-white' : 'text-text-primary'}`}>
@@ -858,7 +796,7 @@ export default function Home() {
                 </div>
               </motion.div>
 
-              {/* Contact Form */}
+              {/* Contact Form - UPDATED to be functional */}
               <motion.div
                 initial={{ x: 100, opacity: 0 }}
                 whileInView={{ x: 0, opacity: 1 }}
