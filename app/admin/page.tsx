@@ -81,15 +81,10 @@ interface DashboardStats {
   totalUsers: number;
   activeUsers: number;
   inactiveUsers: number;
-  totalStudents: number;
-  activeStudents: number;
   usersWithJobs: number;
   newUsersToday: number;
-  newStudentsToday: number;
   userGrowth: number;
-  studentGrowth: number;
   usersByRole: { role: string; count: number }[];
-  studentsByCollege: { college: string; count: number }[];
 }
 
 export default function Dashboard() {
@@ -120,13 +115,11 @@ export default function Dashboard() {
       
       // Only admin can fetch user and student lists
       if (user?.role === 'admin') {
-        const [usersRes, studentsRes] = await Promise.all([
-          api.get('/users?limit=1000'),
-          api.get('/students?limit=1000')
+        const [usersRes] = await Promise.all([
+          api.get('/user?limit=1000'),
         ]);
 
         const allUsers: User[] = usersRes.data.data.users || [];
-        const allStudents: Student[] = studentsRes.data.data.students || [];
 
         // Get today's date
         const today = new Date();
@@ -137,18 +130,14 @@ export default function Dashboard() {
         const activeUsers = allUsers.filter(u => u.isActive).length;
         const inactiveUsers = totalUsers - activeUsers;
         
-        const totalStudents = allStudents.length;
-        const activeStudents = allStudents.filter(s => s.isActive !== false).length;
-        
+  
         // Count new users today
         const newUsersToday = allUsers.filter(u => 
           new Date(u.createdAt) >= today
         ).length;
 
         // Count new students today
-        const newStudentsToday = allStudents.filter(s => 
-          new Date(s.createdAt) >= today
-        ).length;
+
 
         // Group users by role
         const usersByRole = allUsers.reduce((acc: { role: string; count: number }[], user) => {
@@ -161,48 +150,29 @@ export default function Dashboard() {
           return acc;
         }, []);
 
-        // Group students by college
-        const studentsByCollege = allStudents.reduce((acc: { college: string; count: number }[], student) => {
-          const existing = acc.find(item => item.college === student.college);
-          if (existing) {
-            existing.count++;
-          } else {
-            acc.push({ college: student.college, count: 1 });
-          }
-          return acc;
-        }, []);
+     
 
         // Get 5 most recent users
         const recentUsersList = [...allUsers]
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .slice(0, 5);
 
-        // Get 5 most recent students
-        const recentStudentsList = [...allStudents]
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .slice(0, 5);
+     
 
         // Simple growth calculation
         const userGrowth = calculateGrowth(allUsers.length, 100);
-        const studentGrowth = calculateGrowth(allStudents.length, 100);
 
         setStatsData({
           totalUsers,
           activeUsers,
           inactiveUsers,
-          totalStudents,
-          activeStudents,
           usersWithJobs: 0, // Placeholder
           newUsersToday,
-          newStudentsToday,
           userGrowth,
-          studentGrowth,
           usersByRole,
-          studentsByCollege
         });
 
         setRecentUsers(recentUsersList);
-        setRecentStudents(recentStudentsList);
       }
       
       setError('');
@@ -587,17 +557,11 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <p className="text-xs md:text-sm opacity-75">Total Students</p>
-                      <p className="text-xl md:text-2xl font-bold">{statsData.totalStudents}</p>
                     </div>
                   </div>
                   <ArrowRight className="h-4 w-4 md:h-5 md:w-5 opacity-50" />
                 </div>
-                <div className="mt-3 md:mt-4 flex items-center text-xs md:text-sm">
-                  <span className="flex items-center" style={{ color: '#10b981', fontWeight: 500 }}>
-                    <TrendingUp className="h-3 w-3 md:h-4 md:w-4 mr-1" />
-                    +{statsData.newStudentsToday} today
-                  </span>
-                </div>
+              
               </div>
             </Link>
             
@@ -615,19 +579,8 @@ export default function Dashboard() {
                     }}>
                       <Building className="h-4 w-4 md:h-6 md:w-6" style={{ color: '#f59e0b' }} />
                     </div>
-                    <div>
-                      <p className="text-xs md:text-sm opacity-75">Colleges</p>
-                      <p className="text-xl md:text-2xl font-bold">{statsData.studentsByCollege.length}</p>
-                    </div>
                   </div>
                   <ArrowRight className="h-4 w-4 md:h-5 md:w-5 opacity-50" />
-                </div>
-                <div className="mt-3 md:mt-4 text-xs md:text-sm opacity-75">
-                  {statsData.studentsByCollege.slice(0, 2).map((college, index) => (
-                    <div key={index} className="truncate">
-                      {college.college}: {college.count}
-                    </div>
-                  ))}
                 </div>
               </div>
             </Link>
