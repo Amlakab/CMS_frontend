@@ -44,11 +44,13 @@ interface Food {
   image?: string;
   imageData?: {
     data: {
-      $binary: {
+      $binary?: {
         base64: string;
         subType: string;
-      }
-    };
+      };
+      type?: string;
+      data?: number[];
+    } | string; // Allow string or object with various structures
     contentType: string;
     fileName: string;
   };
@@ -557,29 +559,43 @@ const FoodManagementPage = () => {
     return cat ? cat.label : category;
   };
 
-  const getImageUrl = (food: Food): string | null => {
-    // First, try to use imageData from database (base64 encoded)
-    if (food.imageData && food.imageData.data && food.imageData.data.$binary) {
-      const base64Data = food.imageData.data.$binary.base64;
-      const contentType = food.imageData.contentType || 'image/jpeg';
-      return `data:${contentType};base64,${base64Data}`;
-    }
-    
-    // Fallback to existing image path if no imageData
-    if (food.image) {
-      if (food.image.startsWith('http')) return food.image;
+ const getImageUrl = (food: Food): string | null => {
+  try {
+    // Check if imageData exists and has the expected structure
+    if (food.imageData && food.imageData.data) {
+      let base64String: string;
       
-      if (food.image.startsWith('/uploads')) {
-        const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        return `${serverUrl}${food.image}`;
+      // Extract base64 string based on the structure
+      if (typeof food.imageData.data === 'string') {
+        // Already a string
+        base64String = food.imageData.data;
+      } else if (food.imageData.data.$binary && food.imageData.data.$binary.base64) {
+        // MongoDB BSON format
+        base64String = food.imageData.data.$binary.base64;
+      } else if (food.imageData.data.data && Array.isArray(food.imageData.data.data)) {
+        // Buffer format
+        base64String = Buffer.from(food.imageData.data.data).toString('base64');
+      } else {
+        throw new Error('Unknown image data structure');
       }
       
-      const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      return `${serverUrl}/uploads/foods/${food.image}`;
+      // Clean and construct the data URL
+      const cleanBase64 = base64String.replace(/\s/g, '');
+      const contentType = food.imageData.contentType || 'image/jpeg';
+      return `data:${contentType};base64,${cleanBase64}`;
+    }
+    
+    // Fallback to image field if it's a data URL
+    if (food.image && food.image.startsWith('data:image')) {
+      return food.image;
     }
     
     return null;
-  };
+  } catch (error) {
+    console.error('Error getting image URL:', error);
+    return null;
+  }
+};
 
   const renderFormSection = (title: string, icon: React.ReactNode, content: React.ReactNode) => (
     <>
