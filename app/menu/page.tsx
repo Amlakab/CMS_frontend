@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Box, Typography, Card, CardContent, Chip,
   IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, Button, Avatar, Divider,
+  DialogActions, Button, Divider,
   Stack, CircularProgress, useMediaQuery,
   Snackbar, Alert, Tooltip,
   TextField, Select, MenuItem, FormControl, InputLabel,
@@ -13,7 +13,6 @@ import {
 import { motion } from 'framer-motion';
 import { useTheme } from '@/lib/theme-context';
 import Navbar from '@/components/ui/Navbar'; // Make sure this path is correct
-import Footer from '@/components/ui/Footer'; // Add if you have a footer
 import {
   Restaurant, Visibility, CalendarToday,
   Search, Close, ShoppingCart,
@@ -25,11 +24,31 @@ import {
 } from '@mui/icons-material';
 import api from '@/app/utils/api';
 
+// Define types for different image data structures
+type ImageBinaryData = {
+  $binary: {
+    base64: string;
+    subType: string;
+  };
+};
+
+type ImageBufferData = {
+  type: 'Buffer';
+  data: number[];
+};
+
+type ImageDataUnion = string | ImageBinaryData | ImageBufferData;
+
 interface Food {
   _id: string;
   name: string;
   description: string;
   image?: string;
+  imageData?: {
+    data: ImageDataUnion;
+    contentType: string;
+    fileName: string;
+  };
   category: 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'DRINK' | 'SNACK';
   price: number;
   view: number;
@@ -105,6 +124,76 @@ const PublicFoodPage = () => {
   });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Type guard functions
+  const isBinaryData = (data: ImageDataUnion): data is ImageBinaryData => {
+    return typeof data === 'object' && '$binary' in data && 
+           data.$binary !== undefined && 'base64' in data.$binary;
+  };
+
+  const isBufferData = (data: ImageDataUnion): data is ImageBufferData => {
+    return typeof data === 'object' && 'type' in data && 
+           data.type === 'Buffer' && 'data' in data && 
+           Array.isArray(data.data);
+  };
+
+  const isStringData = (data: ImageDataUnion): data is string => {
+    return typeof data === 'string';
+  };
+
+  // Updated getImageUrl function with type guards
+  const getImageUrl = (food: Food): string | null => {
+    try {
+      // Check if imageData exists and has the expected structure
+      if (food.imageData && food.imageData.data) {
+        let base64String: string;
+        const data = food.imageData.data;
+        
+        // Use type guards to handle different data structures
+        if (isStringData(data)) {
+          // Already a string
+          base64String = data;
+        } else if (isBinaryData(data)) {
+          // MongoDB BSON format
+          base64String = data.$binary.base64;
+        } else if (isBufferData(data)) {
+          // Buffer format
+          base64String = Buffer.from(data.data).toString('base64');
+        } else {
+          console.error('Unknown image data structure:', data);
+          return null;
+        }
+        
+        // Clean and construct the data URL
+        const cleanBase64 = base64String.replace(/\s/g, '');
+        const contentType = food.imageData.contentType || 'image/jpeg';
+        return `data:${contentType};base64,${cleanBase64}`;
+      }
+      
+      // Fallback to image field if it's a data URL
+      if (food.image && food.image.startsWith('data:image')) {
+        return food.image;
+      }
+      
+      // Fallback to image path if it exists
+      if (food.image) {
+        if (food.image.startsWith('http')) return food.image;
+        
+        if (food.image.startsWith('/uploads')) {
+          const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+          return `${serverUrl}${food.image}`;
+        }
+        
+        const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        return `${serverUrl}/uploads/foods/${food.image}`;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error getting image URL:', error);
+      return null;
+    }
+  };
 
   const fetchAvailableFoods = async (forList: boolean = false) => {
     try {
@@ -275,20 +364,6 @@ const PublicFoodPage = () => {
       style: 'currency',
       currency: 'USD'
     }).format(price);
-  };
-
-  const getImageUrl = (imagePath: string | undefined): string => {
-    if (!imagePath) return '/api/placeholder/400/250';
-    
-    if (imagePath.startsWith('http')) return imagePath;
-    
-    const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    
-    if (imagePath.startsWith('/uploads')) {
-      return `${serverUrl}${imagePath}`;
-    }
-    
-    return `${serverUrl}/uploads/foods/${imagePath}`;
   };
 
   const getCategoryLabel = (category: string) => {
@@ -578,22 +653,38 @@ const PublicFoodPage = () => {
                           borderTopLeftRadius: 8,
                           borderTopRightRadius: 8
                         }}>
-                          <img
-                            src={getImageUrl(food.image)}
-                            alt={food.name}
-                            style={{ 
+                          {getImageUrl(food) ? (
+                            <img
+                              src={getImageUrl(food) || ''}
+                              alt={food.name}
+                              style={{ 
+                                width: '100%', 
+                                height: '100%', 
+                                objectFit: 'cover',
+                                transition: 'transform 0.3s'
+                              }}
+                              className="group-hover:scale-105"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.onerror = null;
+                                target.src = '/api/placeholder/400/250';
+                              }}
+                            />
+                          ) : (
+                            <Box sx={{ 
                               width: '100%', 
                               height: '100%', 
-                              objectFit: 'cover',
-                              transition: 'transform 0.3s'
-                            }}
-                            className="group-hover:scale-105"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.onerror = null;
-                              target.src = '/api/placeholder/400/250';
-                            }}
-                          />
+                              backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <Restaurant sx={{ 
+                                fontSize: 48, 
+                                color: theme === 'dark' ? '#a8b2d1' : '#94a3b8' 
+                              }} />
+                            </Box>
+                          )}
                           
                           {/* Category Badge */}
                           <Chip
@@ -822,130 +913,128 @@ const PublicFoodPage = () => {
         </section>
 
         {/* Horizontal Food Name List Section */}
-
-{/* Horizontal Food Name List Section */}
-{allFoods.length > 0 && (
-  <section className={`py-8 px-4 ${
-    theme === 'dark' ? 'bg-[#0f172a80]' : 'bg-gray-50'
-  }`}>
-    <div className="container mx-auto">
-      <motion.div
-        initial={{ y: 50, opacity: 0 }}
-        whileInView={{ y: 0, opacity: 1 }}
-        transition={{ duration: 1 }}
-        viewport={{ once: true }}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className={`text-2xl font-bold ${
-            theme === 'dark' ? 'text-[#00ffff]' : 'text-[#007bff]'
+        {allFoods.length > 0 && (
+          <section className={`py-8 px-4 ${
+            theme === 'dark' ? 'bg-[#0f172a80]' : 'bg-gray-50'
           }`}>
-            All Available Foods
-          </h2>
-          
-          <div className="flex gap-2">
-            <IconButton
-              onClick={() => scrollHorizontalList('left')}
-              sx={{
-                color: theme === 'dark' ? '#00ffff' : '#007bff',
-                border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
-                '&:hover': {
-                  backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
-                }
-              }}
-            >
-              <NavigateBefore />
-            </IconButton>
-            <IconButton
-              onClick={() => scrollHorizontalList('right')}
-              sx={{
-                color: theme === 'dark' ? '#00ffff' : '#007bff',
-                border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
-                '&:hover': {
-                  backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
-                }
-              }}
-            >
-              <NavigateNext />
-            </IconButton>
-          </div>
-        </div>
-
-        <div className="relative">
-          <div
-            ref={scrollContainerRef}
-            className="flex overflow-x-auto gap-4 py-4 scroll-smooth hide-scrollbar"
-          >
-            {allFoods.map((food) => (
+            <div className="container mx-auto">
               <motion.div
-                key={food._id}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3 }}
+                initial={{ y: 50, opacity: 0 }}
+                whileInView={{ y: 0, opacity: 1 }}
+                transition={{ duration: 1 }}
+                viewport={{ once: true }}
               >
-                <button
-                  onClick={() => handleFoodNameClick(food)}
-                  className={`flex-shrink-0 px-6 py-3 rounded-lg transition-all duration-300 ${
-                    theme === 'dark' 
-                      ? 'bg-[#1e293b] hover:bg-[#334155] text-white' 
-                      : 'bg-white hover:bg-gray-100 text-gray-800'
-                  } shadow-md border ${
-                    theme === 'dark' 
-                      ? 'border-[#334155] hover:border-[#00ffff]' 
-                      : 'border-gray-200 hover:border-[#007bff]'
-                  }`}
-                  style={{
-                    minWidth: 'fit-content',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <Restaurant sx={{ 
-                      fontSize: 20,
-                      color: theme === 'dark' ? '#00ffff' : '#007bff' 
-                    }} />
-                    <span className="font-medium text-sm md:text-base">
-                      {food.name}
-                    </span>
-                    <Chip
-                      label={formatPrice(food.price)}
-                      size="small"
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className={`text-2xl font-bold ${
+                    theme === 'dark' ? 'text-[#00ffff]' : 'text-[#007bff]'
+                  }`}>
+                    All Available Foods
+                  </h2>
+                  
+                  <div className="flex gap-2">
+                    <IconButton
+                      onClick={() => scrollHorizontalList('left')}
                       sx={{
-                        height: 20,
-                        fontSize: '0.7rem',
-                        backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                        color: theme === 'dark' ? '#a8b2d1' : '#666666'
+                        color: theme === 'dark' ? '#00ffff' : '#007bff',
+                        border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
+                        '&:hover': {
+                          backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                        }
                       }}
-                    />
+                    >
+                      <NavigateBefore />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => scrollHorizontalList('right')}
+                      sx={{
+                        color: theme === 'dark' ? '#00ffff' : '#007bff',
+                        border: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb',
+                        '&:hover': {
+                          backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                        }
+                      }}
+                    >
+                      <NavigateNext />
+                    </IconButton>
                   </div>
-                </button>
+                </div>
+
+                <div className="relative">
+                  <div
+                    ref={scrollContainerRef}
+                    className="flex overflow-x-auto gap-4 py-4 scroll-smooth hide-scrollbar"
+                  >
+                    {allFoods.map((food) => (
+                      <motion.div
+                        key={food._id}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <button
+                          onClick={() => handleFoodNameClick(food)}
+                          className={`flex-shrink-0 px-6 py-3 rounded-lg transition-all duration-300 ${
+                            theme === 'dark' 
+                              ? 'bg-[#1e293b] hover:bg-[#334155] text-white' 
+                              : 'bg-white hover:bg-gray-100 text-gray-800'
+                          } shadow-md border ${
+                            theme === 'dark' 
+                              ? 'border-[#334155] hover:border-[#00ffff]' 
+                              : 'border-gray-200 hover:border-[#007bff]'
+                          }`}
+                          style={{
+                            minWidth: 'fit-content',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Restaurant sx={{ 
+                              fontSize: 20,
+                              color: theme === 'dark' ? '#00ffff' : '#007bff' 
+                            }} />
+                            <span className="font-medium text-sm md:text-base">
+                              {food.name}
+                            </span>
+                            <Chip
+                              label={formatPrice(food.price)}
+                              size="small"
+                              sx={{
+                                height: 20,
+                                fontSize: '0.7rem',
+                                backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                color: theme === 'dark' ? '#a8b2d1' : '#666666'
+                              }}
+                            />
+                          </div>
+                        </button>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {/* Gradient fade effects on sides */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-8 pointer-events-none ${
+                    theme === 'dark'
+                      ? 'bg-gradient-to-r from-[#0f172a80] to-transparent'
+                      : 'bg-gradient-to-r from-gray-50 to-transparent'
+                  }`} />
+                  <div className={`absolute right-0 top-0 bottom-0 w-8 pointer-events-none ${
+                    theme === 'dark'
+                      ? 'bg-gradient-to-l from-[#0f172a80] to-transparent'
+                      : 'bg-gradient-to-l from-gray-50 to-transparent'
+                  }`} />
+                </div>
+
+                <div className="flex items-center justify-center mt-4">
+                  <Typography variant="caption" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
+                    Scroll or use arrows to see more foods • Click on any food to jump to it in the grid
+                  </Typography>
+                </div>
               </motion.div>
-            ))}
-          </div>
-
-          {/* Gradient fade effects on sides */}
-          <div className={`absolute left-0 top-0 bottom-0 w-8 pointer-events-none ${
-            theme === 'dark'
-              ? 'bg-gradient-to-r from-[#0f172a80] to-transparent'
-              : 'bg-gradient-to-r from-gray-50 to-transparent'
-          }`} />
-          <div className={`absolute right-0 top-0 bottom-0 w-8 pointer-events-none ${
-            theme === 'dark'
-              ? 'bg-gradient-to-l from-[#0f172a80] to-transparent'
-              : 'bg-gradient-to-l from-gray-50 to-transparent'
-          }`} />
-        </div>
-
-        <div className="flex items-center justify-center mt-4">
-          <Typography variant="caption" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
-            Scroll or use arrows to see more foods • Click on any food to jump to it in the grid
-          </Typography>
-        </div>
-      </motion.div>
-    </div>
-  </section>
-)}
+            </div>
+          </section>
+        )}
 
         {/* Categories Section */}
         <section className={`py-12 px-4 ${
@@ -995,7 +1084,7 @@ const PublicFoodPage = () => {
         </section>
       </div>
 
-      {/* Food Detail Dialog - Fixed Image Display */}
+      {/* Food Detail Dialog */}
       <Dialog 
         open={openViewDialog} 
         onClose={handleCloseViewDialog}
@@ -1039,8 +1128,8 @@ const PublicFoodPage = () => {
             </DialogTitle>
             
             <DialogContent sx={{ p: 0, overflowY: 'auto' }}>
-              {/* Food Image - FIXED: Added padding and proper objectFit */}
-              {selectedFood.image && (
+              {/* Food Image */}
+              {getImageUrl(selectedFood) && (
                 <Box sx={{ 
                   width: '100%',
                   minHeight: { xs: 200, md: 300 },
@@ -1051,15 +1140,15 @@ const PublicFoodPage = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: theme === 'dark' ? '#0a192f' : '#f8f9fa',
-                  p: { xs: 1, md: 2 } // Added padding
+                  p: { xs: 1, md: 2 }
                 }}>
                   <img
-                    src={getImageUrl(selectedFood.image)}
+                    src={getImageUrl(selectedFood) || ''}
                     alt={selectedFood.name}
                     style={{ 
                       maxWidth: '100%',
                       maxHeight: '100%',
-                      objectFit: 'contain', // Changed from 'cover' to 'contain'
+                      objectFit: 'contain',
                       borderRadius: '8px',
                       boxShadow: theme === 'dark' 
                         ? '0 4px 12px rgba(0,0,0,0.3)' 
@@ -1225,7 +1314,7 @@ const PublicFoodPage = () => {
         )}
       </Dialog>
 
-      {/* Order Dialog (unchanged) */}
+      {/* Order Dialog */}
       <Dialog 
         open={openOrderDialog} 
         onClose={handleCloseOrderDialog}

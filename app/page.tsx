@@ -29,6 +29,40 @@ import {
 } from 'react-icons/fa';
 import api from '@/app/utils/api';
 
+// Define types for different image data structures
+type ImageBinaryData = {
+  $binary: {
+    base64: string;
+    subType: string;
+  };
+};
+
+type ImageBufferData = {
+  type: 'Buffer';
+  data: number[];
+};
+
+type ImageDataUnion = string | ImageBinaryData | ImageBufferData;
+
+interface Food {
+  _id: string;
+  name: string;
+  description: string;
+  image?: string;
+  imageData?: {
+    data: ImageDataUnion;
+    contentType: string;
+    fileName: string;
+  };
+  category: 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'DRINK' | 'SNACK';
+  price: number;
+  view: number;
+  quantity_available: boolean;
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  created_at: string;
+  updated_at: string;
+}
+
 // Import images for cafeteria
 const images = {
   hero1: '/images/cafie1.jpeg',
@@ -42,21 +76,6 @@ const images = {
   food2: '/images/food2.jpg',
   food3: '/images/food3.jpg',
 };
-
-// Interface for Food (from your food page)
-interface Food {
-  _id: string;
-  name: string;
-  description: string;
-  image?: string;
-  category: 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'DRINK' | 'SNACK';
-  price: number;
-  view: number;
-  quantity_available: boolean;
-  status: 'AVAILABLE' | 'UNAVAILABLE';
-  created_at: string;
-  updated_at: string;
-}
 
 // Interface for Contact Form
 interface ContactFormData {
@@ -126,19 +145,74 @@ export default function Home() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Helper function to get image URL - Similar to FoodPage
-  const getImageUrl = (imagePath: string | undefined): string => {
-    if (!imagePath) return '/api/placeholder/400/250';
-    
-    if (imagePath.startsWith('http')) return imagePath;
-    
-    const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    
-    if (imagePath.startsWith('/uploads')) {
-      return `${serverUrl}${imagePath}`;
+  // Type guard functions
+  const isBinaryData = (data: ImageDataUnion): data is ImageBinaryData => {
+    return typeof data === 'object' && '$binary' in data && 
+           data.$binary !== undefined && 'base64' in data.$binary;
+  };
+
+  const isBufferData = (data: ImageDataUnion): data is ImageBufferData => {
+    return typeof data === 'object' && 'type' in data && 
+           data.type === 'Buffer' && 'data' in data && 
+           Array.isArray(data.data);
+  };
+
+  const isStringData = (data: ImageDataUnion): data is string => {
+    return typeof data === 'string';
+  };
+
+  // Updated getImageUrl function with type guards
+  const getImageUrl = (food: Food): string => {
+    try {
+      // Check if imageData exists and has the expected structure
+      if (food.imageData && food.imageData.data) {
+        let base64String: string;
+        const data = food.imageData.data;
+        
+        // Use type guards to handle different data structures
+        if (isStringData(data)) {
+          // Already a string
+          base64String = data;
+        } else if (isBinaryData(data)) {
+          // MongoDB BSON format
+          base64String = data.$binary.base64;
+        } else if (isBufferData(data)) {
+          // Buffer format
+          base64String = Buffer.from(data.data).toString('base64');
+        } else {
+          console.error('Unknown image data structure:', data);
+          return '/api/placeholder/400/250';
+        }
+        
+        // Clean and construct the data URL
+        const cleanBase64 = base64String.replace(/\s/g, '');
+        const contentType = food.imageData.contentType || 'image/jpeg';
+        return `data:${contentType};base64,${cleanBase64}`;
+      }
+      
+      // Fallback to image field if it's a data URL
+      if (food.image && food.image.startsWith('data:image')) {
+        return food.image;
+      }
+      
+      // Fallback to image path if it exists
+      if (food.image) {
+        if (food.image.startsWith('http')) return food.image;
+        
+        if (food.image.startsWith('/uploads')) {
+          const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+          return `${serverUrl}${food.image}`;
+        }
+        
+        const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        return `${serverUrl}/uploads/foods/${food.image}`;
+      }
+      
+      return '/api/placeholder/400/250';
+    } catch (error) {
+      console.error('Error getting image URL:', error);
+      return '/api/placeholder/400/250';
     }
-    
-    return `${serverUrl}/uploads/foods/${imagePath}`;
   };
 
   // Format price function
@@ -493,7 +567,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Featured Foods Section - Same as before */}
+        {/* Featured Foods Section - UPDATED with new getImageUrl function */}
         <section className={`py-16 px-4 ${theme === 'dark' ? 'bg-transparent' : 'bg-background'}`}>
           <div className="container mx-auto">
             <h2 className={`text-3xl font-bold text-center mb-12 ${theme === 'dark' ? 'text-white' : 'text-text-primary'}`}>
@@ -515,120 +589,124 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {featuredFoods.map((food, index) => (
-                  <motion.div
-                    key={food._id}
-                    initial={{ y: 50, opacity: 0 }}
-                    whileInView={{ y: 0, opacity: 1 }}
-                    transition={{ duration: 0.5, delay: index * 0.1 }}
-                    viewport={{ once: true }}
-                    whileHover={{ y: -5 }}
-                    className={`rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 ${
-                      theme === 'dark' ? 'bg-surface/30 backdrop-blur-sm' : 'bg-surface'
-                    }`}
-                  >
-                    <Link href="/menu" className="block">
-                      {/* Food Image */}
-                      <div className="relative h-48 overflow-hidden">
-                        <img
-                          src={getImageUrl(food.image)}
-                          alt={food.name}
-                          style={{ 
-                            width: '100%', 
-                            height: '100%', 
-                            objectFit: 'cover',
-                            transition: 'transform 0.3s'
-                          }}
-                          className="group-hover:scale-105"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.onerror = null;
-                            target.src = '/api/placeholder/400/250';
-                          }}
-                        />
-                        {/* Category Badge */}
-                        <div className="absolute top-2 left-2">
-                          <span className={`px-2 py-1 text-xs font-bold ${
-                            theme === 'dark' 
-                              ? 'bg-gray-800 text-gray-300' 
-                              : 'bg-gray-100 text-gray-600'
-                          } rounded`}>
-                            {getCategoryLabel(food.category)}
-                          </span>
-                        </div>
-                        {/* Popular Badge */}
-                        {food.view > 50 && (
-                          <div className="absolute top-2 right-2">
-                            <span className="px-2 py-1 text-xs font-bold bg-yellow-500 text-gray-900 rounded flex items-center gap-1">
-                              <FaFire size={10} /> Popular
+                {featuredFoods.map((food, index) => {
+                  const imageUrl = getImageUrl(food);
+                  
+                  return (
+                    <motion.div
+                      key={food._id}
+                      initial={{ y: 50, opacity: 0 }}
+                      whileInView={{ y: 0, opacity: 1 }}
+                      transition={{ duration: 0.5, delay: index * 0.1 }}
+                      viewport={{ once: true }}
+                      whileHover={{ y: -5 }}
+                      className={`rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 ${
+                        theme === 'dark' ? 'bg-surface/30 backdrop-blur-sm' : 'bg-surface'
+                      }`}
+                    >
+                      <Link href="/menu" className="block">
+                        {/* Food Image */}
+                        <div className="relative h-48 overflow-hidden">
+                          <img
+                            src={imageUrl}
+                            alt={food.name}
+                            style={{ 
+                              width: '100%', 
+                              height: '100%', 
+                              objectFit: 'cover',
+                              transition: 'transform 0.3s'
+                            }}
+                            className="group-hover:scale-105"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.onerror = null;
+                              target.src = '/api/placeholder/400/250';
+                            }}
+                          />
+                          {/* Category Badge */}
+                          <div className="absolute top-2 left-2">
+                            <span className={`px-2 py-1 text-xs font-bold ${
+                              theme === 'dark' 
+                                ? 'bg-gray-800 text-gray-300' 
+                                : 'bg-gray-100 text-gray-600'
+                            } rounded`}>
+                              {getCategoryLabel(food.category)}
                             </span>
                           </div>
-                        )}
-                      </div>
-                      <div className="p-6">
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className={`text-lg font-semibold ${
-                            theme === 'dark' ? 'text-white' : 'text-text-primary'
-                          }`}>
-                            {food.name}
-                          </h3>
-                          <span className={`text-lg font-bold ${
-                            theme === 'dark' ? 'text-orange-400' : 'text-orange-600'
-                          }`}>
-                            {formatPrice(food.price)}
-                          </span>
-                        </div>
-                        <p className={`text-base mb-3 ${
-                          theme === 'dark' ? 'text-gray-300' : 'text-text-secondary'
-                        }`}>
-                          {food.description.length > 100 
-                            ? `${food.description.substring(0, 100)}...` 
-                            : food.description}
-                        </p>
-                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center">
-                              <FaStar className="text-yellow-500 mr-1" />
-                              <span className={`text-sm ${
-                                theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                              }`}>
-                                {food.view} views
+                          {/* Popular Badge */}
+                          {food.view > 50 && (
+                            <div className="absolute top-2 right-2">
+                              <span className="px-2 py-1 text-xs font-bold bg-yellow-500 text-gray-900 rounded flex items-center gap-1">
+                                <FaFire size={10} /> Popular
                               </span>
                             </div>
-                            <div className={`flex items-center ${
-                              food.quantity_available 
-                                ? theme === 'dark' ? 'text-green-400' : 'text-green-600'
-                                : theme === 'dark' ? 'text-red-400' : 'text-red-600'
+                          )}
+                        </div>
+                        <div className="p-6">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className={`text-lg font-semibold ${
+                              theme === 'dark' ? 'text-white' : 'text-text-primary'
                             }`}>
-                              <div className={`w-2 h-2 rounded-full mr-1 ${
-                                food.quantity_available 
-                                  ? theme === 'dark' ? 'bg-green-400' : 'bg-green-600'
-                                  : theme === 'dark' ? 'bg-red-400' : 'bg-red-600'
-                              }`}></div>
-                              <span className="text-sm">
-                                {food.quantity_available ? 'In Stock' : 'Out of Stock'}
-                              </span>
-                            </div>
+                              {food.name}
+                            </h3>
+                            <span className={`text-lg font-bold ${
+                              theme === 'dark' ? 'text-orange-400' : 'text-orange-600'
+                            }`}>
+                              {formatPrice(food.price)}
+                            </span>
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              // Handle quick order
-                              window.location.href = `/menu?food=${food._id}`;
-                            }}
-                            className={`px-3 py-1 rounded text-sm font-medium ${
-                              theme === 'dark'
-                                ? 'bg-orange-600 hover:bg-orange-700 text-white'
-                                : 'bg-orange-500 hover:bg-orange-600 text-white'
-                            } transition-colors duration-300 flex items-center gap-1`}
-                          >
-                            <FaShoppingCart size={12} /> Order
-                          </button>
+                          <p className={`text-base mb-3 ${
+                            theme === 'dark' ? 'text-gray-300' : 'text-text-secondary'
+                          }`}>
+                            {food.description.length > 100 
+                              ? `${food.description.substring(0, 100)}...` 
+                              : food.description}
+                          </p>
+                          <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center">
+                                <FaStar className="text-yellow-500 mr-1" />
+                                <span className={`text-sm ${
+                                  theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                                }`}>
+                                  {food.view} views
+                                </span>
+                              </div>
+                              <div className={`flex items-center ${
+                                food.quantity_available 
+                                  ? theme === 'dark' ? 'text-green-400' : 'text-green-600'
+                                  : theme === 'dark' ? 'text-red-400' : 'text-red-600'
+                              }`}>
+                                <div className={`w-2 h-2 rounded-full mr-1 ${
+                                  food.quantity_available 
+                                    ? theme === 'dark' ? 'bg-green-400' : 'bg-green-600'
+                                    : theme === 'dark' ? 'bg-red-400' : 'bg-red-600'
+                                }`}></div>
+                                <span className="text-sm">
+                                  {food.quantity_available ? 'In Stock' : 'Out of Stock'}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                // Handle quick order
+                                window.location.href = `/menu?food=${food._id}`;
+                              }}
+                              className={`px-3 py-1 rounded text-sm font-medium ${
+                                theme === 'dark'
+                                  ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                                  : 'bg-orange-500 hover:bg-orange-600 text-white'
+                              } transition-colors duration-300 flex items-center gap-1`}
+                            >
+                              <FaShoppingCart size={12} /> Order
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </Link>
-                  </motion.div>
-                ))}
+                      </Link>
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
             <div className="text-center mt-12">
@@ -707,7 +785,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Contact Section - UPDATED with functional form */}
+        {/* Contact Section - Same as before */}
         <section className={`py-16 px-4 ${theme === 'dark' ? 'bg-transparent' : 'bg-background'}`}>
           <div className="container mx-auto">
             <h2 className={`text-3xl font-bold text-center mb-12 ${theme === 'dark' ? 'text-white' : 'text-text-primary'}`}>
@@ -796,7 +874,7 @@ export default function Home() {
                 </div>
               </motion.div>
 
-              {/* Contact Form - UPDATED to be functional */}
+              {/* Contact Form */}
               <motion.div
                 initial={{ x: 100, opacity: 0 }}
                 whileInView={{ x: 0, opacity: 1 }}

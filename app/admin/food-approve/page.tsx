@@ -10,7 +10,7 @@ import {
   MenuItem, Select, FormControl, InputLabel,
   IconButton, Dialog, DialogTitle, DialogContent,
   DialogActions, Button, Avatar, Divider,
-  Stack, Tooltip, Switch
+  Stack, Tooltip, Switch, ToggleButton, ToggleButtonGroup
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/lib/theme-context';
@@ -32,11 +32,31 @@ import {
 import api from '@/app/utils/api';
 import { format } from 'date-fns';
 
+// Define types for different image data structures
+type ImageBinaryData = {
+  $binary: {
+    base64: string;
+    subType: string;
+  };
+};
+
+type ImageBufferData = {
+  type: 'Buffer';
+  data: number[];
+};
+
+type ImageDataUnion = string | ImageBinaryData | ImageBufferData;
+
 interface Food {
   _id: string;
   name: string;
   description: string;
   image?: string;
+  imageData?: {
+    data: ImageDataUnion;
+    contentType: string;
+    fileName: string;
+  };
   category: 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'DRINK' | 'SNACK';
   price: number;
   view: number;
@@ -112,6 +132,7 @@ const FoodApprovePage = () => {
     status: 'AVAILABLE',
     quantity_available: true
   });
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
 
   const themeStyles = {
     background: theme === 'dark' 
@@ -374,18 +395,74 @@ const FoodApprovePage = () => {
     return cat ? cat.label : category;
   };
 
-  const getImageUrl = (imagePath: string | undefined): string | null => {
-    if (!imagePath) return null;
-    
-    if (imagePath.startsWith('http')) return imagePath;
-    
-    if (imagePath.startsWith('/uploads')) {
-      const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      return `${serverUrl}${imagePath}`;
+  // Type guard functions
+  const isBinaryData = (data: ImageDataUnion): data is ImageBinaryData => {
+    return typeof data === 'object' && '$binary' in data && 
+           data.$binary !== undefined && 'base64' in data.$binary;
+  };
+
+  const isBufferData = (data: ImageDataUnion): data is ImageBufferData => {
+    return typeof data === 'object' && 'type' in data && 
+           data.type === 'Buffer' && 'data' in data && 
+           Array.isArray(data.data);
+  };
+
+  const isStringData = (data: ImageDataUnion): data is string => {
+    return typeof data === 'string';
+  };
+
+  // Updated getImageUrl function with type guards
+  const getImageUrl = (food: Food): string | null => {
+    try {
+      // Check if imageData exists and has the expected structure
+      if (food.imageData && food.imageData.data) {
+        let base64String: string;
+        const data = food.imageData.data;
+        
+        // Use type guards to handle different data structures
+        if (isStringData(data)) {
+          // Already a string
+          base64String = data;
+        } else if (isBinaryData(data)) {
+          // MongoDB BSON format
+          base64String = data.$binary.base64;
+        } else if (isBufferData(data)) {
+          // Buffer format
+          base64String = Buffer.from(data.data).toString('base64');
+        } else {
+          console.error('Unknown image data structure:', data);
+          return null;
+        }
+        
+        // Clean and construct the data URL
+        const cleanBase64 = base64String.replace(/\s/g, '');
+        const contentType = food.imageData.contentType || 'image/jpeg';
+        return `data:${contentType};base64,${cleanBase64}`;
+      }
+      
+      // Fallback to image field if it's a data URL
+      if (food.image && food.image.startsWith('data:image')) {
+        return food.image;
+      }
+      
+      // Fallback to image path if it exists
+      if (food.image) {
+        if (food.image.startsWith('http')) return food.image;
+        
+        if (food.image.startsWith('/uploads')) {
+          const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+          return `${serverUrl}${food.image}`;
+        }
+        
+        const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        return `${serverUrl}/uploads/foods/${food.image}`;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error getting image URL:', error);
+      return null;
     }
-    
-    const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    return `${serverUrl}/uploads/foods/${imagePath}`;
   };
 
   return (
@@ -526,6 +603,31 @@ const FoodApprovePage = () => {
                   gap: 2,
                   flexDirection: { xs: 'column', sm: 'row' }
                 }}>
+                  <ToggleButtonGroup
+                    value={viewMode}
+                    exclusive
+                    onChange={(e, newMode) => newMode && setViewMode(newMode)}
+                    size="small"
+                    sx={{
+                      '& .MuiToggleButton-root': {
+                        borderColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                        color: theme === 'dark' ? '#a8b2d1' : '#666666',
+                        '&.Mui-selected': {
+                          backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10',
+                          color: theme === 'dark' ? '#00ffff' : '#007bff',
+                          borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+                        }
+                      }
+                    }}
+                  >
+                    <ToggleButton value="list">
+                      List
+                    </ToggleButton>
+                    <ToggleButton value="grid">
+                      Grid
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                  
                   <Button
                     variant="outlined"
                     startIcon={<Refresh />}
@@ -649,7 +751,7 @@ const FoodApprovePage = () => {
           </Card>
         </motion.div>
 
-        {/* Foods Table */}
+        {/* Foods List */}
         {loading ? (
           <Box sx={{ 
             display: 'flex', 
@@ -665,261 +767,507 @@ const FoodApprovePage = () => {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.3 }}
           >
-            <Card sx={{ 
-              borderRadius: 2,
-              boxShadow: theme === 'dark' 
-                ? '0 4px 12px rgba(0,0,0,0.3)' 
-                : '0 4px 12px rgba(0,0,0,0.08)',
-              border: theme === 'dark' 
-                ? '1px solid #334155' 
-                : '1px solid #e5e7eb',
-              backgroundColor: theme === 'dark' ? '#0f172a80' : 'white',
-              backdropFilter: theme === 'dark' ? 'blur(10px)' : 'none'
-            }}>
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow sx={{ 
-                      background: theme === 'dark'
-                        ? 'linear-gradient(135deg, #00ffff, #00b3b3)'
-                        : 'linear-gradient(135deg, #007bff, #0056b3)'
-                    }}>
-                      <TableCell sx={{ 
-                        color: 'white', 
-                        fontWeight: 'bold',
-                        fontSize: '0.875rem',
-                        py: 2,
-                        width: '25%'
+            {viewMode === 'grid' ? (
+              /* Grid View */
+              <Box sx={{ 
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  sm: 'repeat(2, 1fr)',
+                  md: 'repeat(3, 1fr)',
+                  lg: 'repeat(4, 1fr)'
+                },
+                gap: 3
+              }}>
+                {foods.map((food) => {
+                  const imageUrl = getImageUrl(food);
+                  
+                  return (
+                    <Card 
+                      key={food._id}
+                      sx={{ 
+                        height: '100%',
+                        borderRadius: 2,
+                        boxShadow: theme === 'dark' 
+                          ? '0 2px 8px rgba(0,0,0,0.3)' 
+                          : '0 2px 8px rgba(0,0,0,0.1)',
+                        border: theme === 'dark' 
+                          ? '1px solid #334155' 
+                          : '1px solid #e5e7eb',
+                        backgroundColor: theme === 'dark' ? '#0f172a80' : 'white',
+                        backdropFilter: theme === 'dark' ? 'blur(10px)' : 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: theme === 'dark' 
+                            ? '0 8px 24px rgba(0, 255, 255, 0.2)' 
+                            : '0 8px 24px rgba(37, 99, 235, 0.2)'
+                        }
+                      }}
+                    >
+                      {/* Food Image */}
+                      <Box sx={{ 
+                        position: 'relative',
+                        height: 160,
+                        overflow: 'hidden',
+                        borderTopLeftRadius: 8,
+                        borderTopRightRadius: 8
                       }}>
-                        Food
-                      </TableCell>
-                      <TableCell sx={{ 
-                        color: 'white', 
-                        fontWeight: 'bold',
-                        fontSize: '0.875rem',
-                        py: 2
-                      }}>
-                        Category/Price
-                      </TableCell>
-                      <TableCell sx={{ 
-                        color: 'white', 
-                        fontWeight: 'bold',
-                        fontSize: '0.875rem',
-                        py: 2
-                      }}>
-                        Availability
-                      </TableCell>
-                      <TableCell sx={{ 
-                        color: 'white', 
-                        fontWeight: 'bold',
-                        fontSize: '0.875rem',
-                        py: 2
-                      }}>
-                        Stats
-                      </TableCell>
-                      <TableCell sx={{ 
-                        color: 'white', 
-                        fontWeight: 'bold',
-                        fontSize: '0.875rem',
-                        py: 2
-                      }}>
-                        Actions
-                      </TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {foods.map((food) => {
-                      const imageUrl = getImageUrl(food.image);
-                      
-                      return (
-                        <TableRow 
-                          key={food._id} 
-                          hover
+                        {imageUrl ? (
+                          <img 
+                            src={imageUrl} 
+                            alt={food.name}
+                            style={{ 
+                              width: '100%', 
+                              height: '100%', 
+                              objectFit: 'cover' 
+                            }}
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.onerror = null;
+                              target.src = '/api/placeholder/400/250';
+                            }}
+                          />
+                        ) : (
+                          <Box sx={{ 
+                            width: '100%', 
+                            height: '100%', 
+                            backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <Restaurant sx={{ 
+                              fontSize: 48, 
+                              color: theme === 'dark' ? '#a8b2d1' : '#94a3b8' 
+                            }} />
+                          </Box>
+                        )}
+                        
+                        {/* Status Badge */}
+                        <Chip
+                          label={getStatusText(food.status)}
+                          size="small"
+                          icon={getStatusIcon(food.status)}
+                          color={getStatusColor(food.status)}
                           sx={{ 
+                            position: 'absolute',
+                            top: 8,
+                            right: 8,
+                            height: 24,
+                            fontSize: '0.7rem'
+                          }}
+                        />
+                        
+                        {/* Quantity Badge */}
+                        <Chip
+                          label={food.quantity_available ? 'In Stock' : 'Out of Stock'}
+                          size="small"
+                          icon={food.quantity_available ? <CheckCircle fontSize="small" /> : <Cancel fontSize="small" />}
+                          sx={{ 
+                            position: 'absolute',
+                            top: 8,
+                            left: 8,
+                            height: 24,
+                            fontSize: '0.7rem',
+                            backgroundColor: food.quantity_available 
+                              ? (theme === 'dark' ? '#00ff0020' : '#28a74520')
+                              : (theme === 'dark' ? '#ff000020' : '#dc354520'),
+                            color: food.quantity_available 
+                              ? (theme === 'dark' ? '#00ff00' : '#28a745')
+                              : (theme === 'dark' ? '#ff0000' : '#dc3545')
+                          }}
+                        />
+                      </Box>
+                      
+                      <CardContent sx={{ p: 2, flexGrow: 1 }}>
+                        {/* Category */}
+                        <Chip
+                          label={getCategoryLabel(food.category)}
+                          size="small"
+                          sx={{ 
+                            mb: 1.5,
+                            height: 20,
+                            fontSize: '0.65rem',
+                            backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb'
+                          }}
+                        />
+                        
+                        {/* Name */}
+                        <Typography 
+                          variant="subtitle1" 
+                          sx={{ 
+                            fontWeight: 'bold',
+                            color: theme === 'dark' ? '#ccd6f6' : '#333333',
+                            mb: 1,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            lineHeight: 1.3
+                          }}
+                        >
+                          {food.name}
+                        </Typography>
+                        
+                        {/* Description */}
+                        <Typography 
+                          variant="body2" 
+                          color={theme === 'dark' ? '#a8b2d1' : '#666666'}
+                          sx={{ 
+                            mb: 2,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            fontSize: '0.8rem'
+                          }}
+                        >
+                          {food.description}
+                        </Typography>
+                        
+                        {/* Price and Stats */}
+                        <Box sx={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          mt: 'auto',
+                          pt: 1,
+                          borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
+                        }}>
+                          <Typography variant="h6" sx={{ 
+                            fontWeight: 'bold',
+                            color: theme === 'dark' ? '#00ffff' : '#007bff'
+                          }}>
+                            {formatPrice(food.price)}
+                          </Typography>
+                          
+                          <Box sx={{ display: 'flex', gap: 1.5 }}>
+                            <Tooltip title="Views">
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <RemoveRedEye fontSize="small" sx={{ fontSize: '0.9rem', color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
+                                <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
+                                  {food.view}
+                                </Typography>
+                              </Box>
+                            </Tooltip>
+                          </Box>
+                        </Box>
+                      </CardContent>
+                      
+                      {/* Action Buttons */}
+                      <Box sx={{ 
+                        p: 2, 
+                        pt: 0,
+                        display: 'flex', 
+                        gap: 1,
+                        borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
+                      }}>
+                        <Button
+                          size="small"
+                          fullWidth
+                          variant="outlined"
+                          startIcon={<Visibility fontSize="small" />}
+                          onClick={() => handleOpenViewDialog(food)}
+                          sx={{
+                            borderRadius: 1,
+                            borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+                            color: theme === 'dark' ? '#00ffff' : '#007bff',
+                            fontSize: '0.75rem',
+                            py: 0.5,
                             '&:hover': {
-                              backgroundColor: theme === 'dark' ? '#1e293b' : '#f8fafc'
+                              backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
                             }
                           }}
                         >
-                          <TableCell sx={{ py: 2.5 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                              {imageUrl ? (
-                                <Box sx={{ 
-                                  width: 60, 
-                                  height: 40,
-                                  borderRadius: 1,
-                                  overflow: 'hidden',
-                                  flexShrink: 0
-                                }}>
-                                  <img 
-                                    src={imageUrl} 
-                                    alt={food.name}
-                                    style={{ 
-                                      width: '100%', 
-                                      height: '100%', 
-                                      objectFit: 'cover' 
-                                    }}
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      target.onerror = null;
-                                      target.src = '/api/placeholder/60/40';
-                                    }}
-                                  />
+                          View
+                        </Button>
+                        <Button
+                          size="small"
+                          fullWidth
+                          variant="outlined"
+                          startIcon={<Edit fontSize="small" />}
+                          onClick={() => handleOpenAvailabilityDialog(food)}
+                          sx={{
+                            borderRadius: 1,
+                            borderColor: theme === 'dark' ? '#00ff00' : '#28a745',
+                            color: theme === 'dark' ? '#00ff00' : '#28a745',
+                            fontSize: '0.75rem',
+                            py: 0.5,
+                            '&:hover': {
+                              backgroundColor: theme === 'dark' ? '#00ff0020' : '#28a74510'
+                            }
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </Box>
+                    </Card>
+                  );
+                })}
+              </Box>
+            ) : (
+              /* Table View */
+              <Card sx={{ 
+                borderRadius: 2,
+                boxShadow: theme === 'dark' 
+                  ? '0 4px 12px rgba(0,0,0,0.3)' 
+                  : '0 4px 12px rgba(0,0,0,0.08)',
+                border: theme === 'dark' 
+                  ? '1px solid #334155' 
+                  : '1px solid #e5e7eb',
+                backgroundColor: theme === 'dark' ? '#0f172a80' : 'white',
+                backdropFilter: theme === 'dark' ? 'blur(10px)' : 'none'
+              }}>
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow sx={{ 
+                        background: theme === 'dark'
+                          ? 'linear-gradient(135deg, #00ffff, #00b3b3)'
+                          : 'linear-gradient(135deg, #007bff, #0056b3)'
+                      }}>
+                        <TableCell sx={{ 
+                          color: 'white', 
+                          fontWeight: 'bold',
+                          fontSize: '0.875rem',
+                          py: 2,
+                          width: '25%'
+                        }}>
+                          Food
+                        </TableCell>
+                        <TableCell sx={{ 
+                          color: 'white', 
+                          fontWeight: 'bold',
+                          fontSize: '0.875rem',
+                          py: 2
+                        }}>
+                          Category/Price
+                        </TableCell>
+                        <TableCell sx={{ 
+                          color: 'white', 
+                          fontWeight: 'bold',
+                          fontSize: '0.875rem',
+                          py: 2
+                        }}>
+                          Availability
+                        </TableCell>
+                        <TableCell sx={{ 
+                          color: 'white', 
+                          fontWeight: 'bold',
+                          fontSize: '0.875rem',
+                          py: 2
+                        }}>
+                          Stats
+                        </TableCell>
+                        <TableCell sx={{ 
+                          color: 'white', 
+                          fontWeight: 'bold',
+                          fontSize: '0.875rem',
+                          py: 2
+                        }}>
+                          Actions
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {foods.map((food) => {
+                        const imageUrl = getImageUrl(food);
+                        
+                        return (
+                          <TableRow 
+                            key={food._id} 
+                            hover
+                            sx={{ 
+                              '&:hover': {
+                                backgroundColor: theme === 'dark' ? '#1e293b' : '#f8fafc'
+                              }
+                            }}
+                          >
+                            <TableCell sx={{ py: 2.5 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                                {imageUrl ? (
+                                  <Box sx={{ 
+                                    width: 60, 
+                                    height: 40,
+                                    borderRadius: 1,
+                                    overflow: 'hidden',
+                                    flexShrink: 0
+                                  }}>
+                                    <img 
+                                      src={imageUrl} 
+                                      alt={food.name}
+                                      style={{ 
+                                        width: '100%', 
+                                        height: '100%', 
+                                        objectFit: 'cover' 
+                                      }}
+                                      onError={(e) => {
+                                        const target = e.target as HTMLImageElement;
+                                        target.onerror = null;
+                                        target.src = '/api/placeholder/60/40';
+                                      }}
+                                    />
+                                  </Box>
+                                ) : (
+                                  <Box sx={{ 
+                                    width: 60, 
+                                    height: 40,
+                                    borderRadius: 1,
+                                    backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                  }}>
+                                    <Restaurant sx={{ 
+                                      fontSize: 20, 
+                                      color: theme === 'dark' ? '#a8b2d1' : '#94a3b8' 
+                                    }} />
+                                  </Box>
+                                )}
+                                <Box>
+                                  <Typography variant="body2" sx={{ 
+                                    fontWeight: 500,
+                                    color: theme === 'dark' ? '#ccd6f6' : '#333333',
+                                    mb: 0.5,
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}>
+                                    {food.name}
+                                  </Typography>
+                                  <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
+                                    {food.description.substring(0, 60)}...
+                                  </Typography>
                                 </Box>
-                              ) : (
-                                <Box sx={{ 
-                                  width: 60, 
-                                  height: 40,
-                                  borderRadius: 1,
-                                  backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  flexShrink: 0
-                                }}>
-                                  <Restaurant sx={{ 
-                                    fontSize: 20, 
-                                    color: theme === 'dark' ? '#a8b2d1' : '#94a3b8' 
-                                  }} />
-                                </Box>
-                              )}
-                              <Box>
+                              </Box>
+                            </TableCell>
+                            <TableCell sx={{ py: 2.5 }}>
+                              <Stack spacing={0.5}>
+                                <Chip
+                                  label={getCategoryLabel(food.category)}
+                                  size="small"
+                                  sx={{ 
+                                    height: 22,
+                                    fontSize: '0.7rem',
+                                    backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb'
+                                  }}
+                                />
                                 <Typography variant="body2" sx={{ 
-                                  fontWeight: 500,
-                                  color: theme === 'dark' ? '#ccd6f6' : '#333333',
-                                  mb: 0.5,
-                                  display: '-webkit-box',
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: 'vertical',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis'
+                                  fontWeight: 'bold', 
+                                  color: theme === 'dark' ? '#00ffff' : '#007bff' 
                                 }}>
-                                  {food.name}
+                                  {formatPrice(food.price)}
                                 </Typography>
-                                <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                  {food.description.substring(0, 60)}...
-                                </Typography>
-                              </Box>
-                            </Box>
-                          </TableCell>
-                          <TableCell sx={{ py: 2.5 }}>
-                            <Stack spacing={0.5}>
-                              <Chip
-                                label={getCategoryLabel(food.category)}
-                                size="small"
-                                sx={{ 
-                                  height: 22,
-                                  fontSize: '0.7rem',
-                                  backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb'
-                                }}
-                              />
-                              <Typography variant="body2" sx={{ 
-                                fontWeight: 'bold', 
-                                color: theme === 'dark' ? '#00ffff' : '#007bff' 
-                              }}>
-                                {formatPrice(food.price)}
-                              </Typography>
-                            </Stack>
-                          </TableCell>
-                          <TableCell sx={{ py: 2.5 }}>
-                            <Stack spacing={1}>
-                              <Chip
-                                label={getStatusText(food.status)}
-                                size="small"
-                                icon={getStatusIcon(food.status)}
-                                color={getStatusColor(food.status)}
-                                sx={{ height: 22, fontSize: '0.7rem' }}
-                              />
-                              <Chip
-                                label={food.quantity_available ? 'In Stock' : 'Out of Stock'}
-                                size="small"
-                                icon={food.quantity_available ? <CheckCircle fontSize="small" /> : <Cancel fontSize="small" />}
-                                sx={{ 
-                                  height: 22,
-                                  fontSize: '0.7rem',
-                                  backgroundColor: food.quantity_available 
-                                    ? (theme === 'dark' ? '#00ff0020' : '#28a74520')
-                                    : (theme === 'dark' ? '#ff000020' : '#dc354520'),
-                                  color: food.quantity_available 
-                                    ? (theme === 'dark' ? '#00ff00' : '#28a745')
-                                    : (theme === 'dark' ? '#ff0000' : '#dc3545')
-                                }}
-                              />
-                            </Stack>
-                          </TableCell>
-                          <TableCell sx={{ py: 2.5 }}>
-                            <Stack spacing={0.5}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <RemoveRedEye fontSize="small" sx={{ fontSize: '0.9rem', color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                                <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                  {food.view} views
-                                </Typography>
-                              </Box>
-                              <Typography variant="caption" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
-                                Created: {formatDate(food.created_at)}
-                              </Typography>
-                            </Stack>
-                          </TableCell>
-                          <TableCell sx={{ py: 2.5 }}>
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              <Tooltip title="View Details">
-                                <IconButton
+                              </Stack>
+                            </TableCell>
+                            <TableCell sx={{ py: 2.5 }}>
+                              <Stack spacing={1}>
+                                <Chip
+                                  label={getStatusText(food.status)}
                                   size="small"
-                                  onClick={() => handleOpenViewDialog(food)}
-                                  sx={{ 
-                                    color: theme === 'dark' ? '#00ffff' : '#007bff',
-                                    '&:hover': {
-                                      backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
-                                    }
-                                  }}
-                                >
-                                  <Visibility fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              
-                              <Tooltip title="Edit Availability">
-                                <IconButton
+                                  icon={getStatusIcon(food.status)}
+                                  color={getStatusColor(food.status)}
+                                  sx={{ height: 22, fontSize: '0.7rem' }}
+                                />
+                                <Chip
+                                  label={food.quantity_available ? 'In Stock' : 'Out of Stock'}
                                   size="small"
-                                  onClick={() => handleOpenAvailabilityDialog(food)}
+                                  icon={food.quantity_available ? <CheckCircle fontSize="small" /> : <Cancel fontSize="small" />}
                                   sx={{ 
-                                    color: theme === 'dark' ? '#00ff00' : '#28a745',
-                                    '&:hover': {
-                                      backgroundColor: theme === 'dark' ? '#00ff0020' : '#28a74510'
-                                    }
+                                    height: 22,
+                                    fontSize: '0.7rem',
+                                    backgroundColor: food.quantity_available 
+                                      ? (theme === 'dark' ? '#00ff0020' : '#28a74520')
+                                      : (theme === 'dark' ? '#ff000020' : '#dc354520'),
+                                    color: food.quantity_available 
+                                      ? (theme === 'dark' ? '#00ff00' : '#28a745')
+                                      : (theme === 'dark' ? '#ff0000' : '#dc3545')
                                   }}
-                                >
-                                  <Edit fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                                />
+                              </Stack>
+                            </TableCell>
+                            <TableCell sx={{ py: 2.5 }}>
+                              <Stack spacing={0.5}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <RemoveRedEye fontSize="small" sx={{ fontSize: '0.9rem', color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
+                                  <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
+                                    {food.view} views
+                                  </Typography>
+                                </Box>
+                                <Typography variant="caption" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
+                                  Created: {formatDate(food.created_at)}
+                                </Typography>
+                              </Stack>
+                            </TableCell>
+                            <TableCell sx={{ py: 2.5 }}>
+                              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                <Tooltip title="View Details">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleOpenViewDialog(food)}
+                                    sx={{ 
+                                      color: theme === 'dark' ? '#00ffff' : '#007bff',
+                                      '&:hover': {
+                                        backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                                      }
+                                    }}
+                                  >
+                                    <Visibility fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                
+                                <Tooltip title="Edit Availability">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleOpenAvailabilityDialog(food)}
+                                    sx={{ 
+                                      color: theme === 'dark' ? '#00ff00' : '#28a745',
+                                      '&:hover': {
+                                        backgroundColor: theme === 'dark' ? '#00ff0020' : '#28a74510'
+                                      }
+                                    }}
+                                  >
+                                    <Edit fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
 
-              {foods.length === 0 && !loading && (
-                <Box sx={{ 
-                  textAlign: 'center', 
-                  py: 8,
-                  px: 2
-                }}>
-                  <Restaurant sx={{ 
-                    fontSize: 64, 
-                    color: theme === 'dark' ? '#334155' : '#cbd5e1',
-                    mb: 2
-                  }} />
-                  <Typography variant="h6" color={theme === 'dark' ? '#a8b2d1' : '#666666'} sx={{ mb: 1 }}>
-                    No foods found
-                  </Typography>
-                  <Typography variant="body2" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
-                    Try adjusting your filters
-                  </Typography>
-                </Box>
-              )}
-            </Card>
+                {foods.length === 0 && !loading && (
+                  <Box sx={{ 
+                    textAlign: 'center', 
+                    py: 8,
+                    px: 2
+                  }}>
+                    <Restaurant sx={{ 
+                      fontSize: 64, 
+                      color: theme === 'dark' ? '#334155' : '#cbd5e1',
+                      mb: 2
+                    }} />
+                    <Typography variant="h6" color={theme === 'dark' ? '#a8b2d1' : '#666666'} sx={{ mb: 1 }}>
+                      No foods found
+                    </Typography>
+                    <Typography variant="body2" color={theme === 'dark' ? '#94a3b8' : '#999999'}>
+                      Try adjusting your filters
+                    </Typography>
+                  </Box>
+                )}
+              </Card>
+            )}
 
             {/* Pagination */}
             {pagination.totalPages > 1 && (
@@ -1018,14 +1366,14 @@ const FoodApprovePage = () => {
                   transition={{ duration: 0.5 }}
                 >
                   {/* Food Image */}
-                  {selectedFood.image && (
+                  {getImageUrl(selectedFood) && (
                     <Box sx={{ 
                       width: '100%',
                       height: { xs: 200, md: 300 },
                       overflow: 'hidden'
                     }}>
                       <img 
-                        src={getImageUrl(selectedFood.image) || ''} 
+                        src={getImageUrl(selectedFood) || ''} 
                         alt={selectedFood.name}
                         style={{ 
                           width: '100%', 
