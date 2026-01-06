@@ -42,6 +42,16 @@ interface Food {
   name: string;
   description: string;
   image?: string;
+  imageData?: {
+    data: {
+      $binary: {
+        base64: string;
+        subType: string;
+      }
+    };
+    contentType: string;
+    fileName: string;
+  };
   category: 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'DRINK' | 'SNACK';
   price: number;
   view: number;
@@ -357,7 +367,7 @@ const FoodManagementPage = () => {
       quantity_available: food.quantity_available,
       status: food.status
     });
-    setImagePreview(food.image ? getImageUrl(food.image) : null);
+    setImagePreview(getImageUrl(food));
     setImageFile(null);
     setOpenEditDialog(true);
   };
@@ -547,18 +557,28 @@ const FoodManagementPage = () => {
     return cat ? cat.label : category;
   };
 
-  const getImageUrl = (imagePath: string | undefined): string | null => {
-    if (!imagePath) return null;
-    
-    if (imagePath.startsWith('http')) return imagePath;
-    
-    if (imagePath.startsWith('/uploads')) {
-      const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      return `${serverUrl}${imagePath}`;
+  const getImageUrl = (food: Food): string | null => {
+    // First, try to use imageData from database (base64 encoded)
+    if (food.imageData && food.imageData.data && food.imageData.data.$binary) {
+      const base64Data = food.imageData.data.$binary.base64;
+      const contentType = food.imageData.contentType || 'image/jpeg';
+      return `data:${contentType};base64,${base64Data}`;
     }
     
-    const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    return `${serverUrl}/uploads/foods/${imagePath}`;
+    // Fallback to existing image path if no imageData
+    if (food.image) {
+      if (food.image.startsWith('http')) return food.image;
+      
+      if (food.image.startsWith('/uploads')) {
+        const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        return `${serverUrl}${food.image}`;
+      }
+      
+      const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      return `${serverUrl}/uploads/foods/${food.image}`;
+    }
+    
+    return null;
   };
 
   const renderFormSection = (title: string, icon: React.ReactNode, content: React.ReactNode) => (
@@ -983,7 +1003,7 @@ const FoodManagementPage = () => {
                 gap: 3
               }}>
                 {foods.map((food) => {
-                  const imageUrl = getImageUrl(food.image);
+                  const imageUrl = getImageUrl(food);
                   
                   return (
                     <Card 
@@ -1287,7 +1307,7 @@ const FoodManagementPage = () => {
                     </TableHead>
                     <TableBody>
                       {foods.map((food) => {
-                        const imageUrl = getImageUrl(food.image);
+                        const imageUrl = getImageUrl(food);
                         
                         return (
                           <TableRow 
@@ -1863,14 +1883,14 @@ const FoodManagementPage = () => {
                   transition={{ duration: 0.5 }}
                 >
                   {/* Food Image */}
-                  {selectedFood.image && (
+                  {(selectedFood.imageData || selectedFood.image) && (
                     <Box sx={{ 
                       width: '100%',
                       height: { xs: 200, md: 300 },
                       overflow: 'hidden'
                     }}>
                       <img 
-                        src={getImageUrl(selectedFood.image) || ''} 
+                        src={getImageUrl(selectedFood) || ''} 
                         alt={selectedFood.name}
                         style={{ 
                           width: '100%', 
