@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/lib/theme-context';
-import Navbar from '@/components/ui/Navbar'; // Make sure this path is correct
+import Navbar from '@/components/ui/Navbar';
 import {
   Restaurant, Visibility, CalendarToday,
   Search, Close, ShoppingCart,
@@ -24,20 +24,15 @@ import {
 } from '@mui/icons-material';
 import api from '@/app/utils/api';
 
-// Define types for different image data structures
-type ImageBinaryData = {
-  $binary: {
+// Define types for image data structure
+type ImageDataStructure = {
+  $binary?: {
     base64: string;
     subType: string;
   };
+  type?: string;
+  data?: number[];
 };
-
-type ImageBufferData = {
-  type: 'Buffer';
-  data: number[];
-};
-
-type ImageDataUnion = string | ImageBinaryData | ImageBufferData;
 
 interface Food {
   _id: string;
@@ -45,7 +40,7 @@ interface Food {
   description: string;
   image?: string;
   imageData?: {
-    data: ImageDataUnion;
+    data: string | ImageDataStructure;
     contentType: string;
     fileName: string;
   };
@@ -87,7 +82,7 @@ const PublicFoodPage = () => {
   const isMobile = useMediaQuery('(max-width: 768px)');
   
   const [foods, setFoods] = useState<Food[]>([]);
-  const [allFoods, setAllFoods] = useState<Food[]>([]); // For horizontal list
+  const [allFoods, setAllFoods] = useState<Food[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -125,42 +120,25 @@ const PublicFoodPage = () => {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Type guard functions
-  const isBinaryData = (data: ImageDataUnion): data is ImageBinaryData => {
-    return typeof data === 'object' && '$binary' in data && 
-           data.$binary !== undefined && 'base64' in data.$binary;
-  };
-
-  const isBufferData = (data: ImageDataUnion): data is ImageBufferData => {
-    return typeof data === 'object' && 'type' in data && 
-           data.type === 'Buffer' && 'data' in data && 
-           Array.isArray(data.data);
-  };
-
-  const isStringData = (data: ImageDataUnion): data is string => {
-    return typeof data === 'string';
-  };
-
-  // Updated getImageUrl function with type guards
+  // Corrected getImageUrl function - same as FoodManagementPage
   const getImageUrl = (food: Food): string | null => {
     try {
       // Check if imageData exists and has the expected structure
       if (food.imageData && food.imageData.data) {
         let base64String: string;
-        const data = food.imageData.data;
         
-        // Use type guards to handle different data structures
-        if (isStringData(data)) {
+        // Extract base64 string based on the structure
+        if (typeof food.imageData.data === 'string') {
           // Already a string
-          base64String = data;
-        } else if (isBinaryData(data)) {
+          base64String = food.imageData.data;
+        } else if (food.imageData.data.$binary && food.imageData.data.$binary.base64) {
           // MongoDB BSON format
-          base64String = data.$binary.base64;
-        } else if (isBufferData(data)) {
+          base64String = food.imageData.data.$binary.base64;
+        } else if (food.imageData.data.data && Array.isArray(food.imageData.data.data)) {
           // Buffer format
-          base64String = Buffer.from(data.data).toString('base64');
+          base64String = Buffer.from(food.imageData.data.data).toString('base64');
         } else {
-          console.error('Unknown image data structure:', data);
+          console.error('Unknown image data structure:', food.imageData.data);
           return null;
         }
         
@@ -200,9 +178,8 @@ const PublicFoodPage = () => {
       if (!forList) setLoading(true);
       const params = new URLSearchParams();
       
-      // For horizontal list, we want all foods without pagination
       if (forList) {
-        params.append('limit', '50'); // Get more foods for the list
+        params.append('limit', '50');
         params.append('page', '1');
       } else {
         Object.entries(filters).forEach(([key, value]) => {
@@ -251,12 +228,11 @@ const PublicFoodPage = () => {
 
   useEffect(() => {
     fetchAvailableFoods();
-    fetchAvailableFoods(true); // Fetch for horizontal list
+    fetchAvailableFoods(true);
     fetchAvailableCategories();
-  }, [filters]);
+  }, []);
 
   useEffect(() => {
-    // Refresh only grid foods when filters change
     if (Object.keys(filters).length > 0) {
       fetchAvailableFoods();
     }
@@ -264,11 +240,9 @@ const PublicFoodPage = () => {
 
   const handleOpenViewDialog = async (food: Food) => {
     try {
-      // Increment view count when viewing
       await api.get(`/foods/${food._id}/view`);
       setSelectedFood(food);
       setOpenViewDialog(true);
-      // Refresh the list to update view counts
       fetchAvailableFoods();
       fetchAvailableFoods(true);
     } catch (error: any) {
@@ -278,7 +252,6 @@ const PublicFoodPage = () => {
 
   const handleOpenOrderDialog = async (food: Food) => {
     try {
-      // Increment view count when ordering
       await api.get(`/foods/${food._id}/view`);
       setSelectedFood(food);
       setOrderForm({
@@ -289,7 +262,6 @@ const PublicFoodPage = () => {
         email: ''
       });
       setOpenOrderDialog(true);
-      // Refresh the list to update view counts
       fetchAvailableFoods();
       fetchAvailableFoods(true);
     } catch (error: any) {
@@ -327,8 +299,6 @@ const PublicFoodPage = () => {
     if (!selectedFood) return;
 
     try {
-      // Here you would typically send the order to your backend
-      // For now, we'll just show a success message
       const orderData = {
         foodId: selectedFood._id,
         foodName: selectedFood.name,
@@ -383,12 +353,9 @@ const PublicFoodPage = () => {
   };
 
   const handleFoodNameClick = (food: Food) => {
-    // Scroll to the food in the grid
     const element = document.getElementById(`food-${food._id}`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      // Add highlight effect
       element.classList.add('highlight-pulse');
       setTimeout(() => {
         element.classList.remove('highlight-pulse');
@@ -613,244 +580,248 @@ const PublicFoodPage = () => {
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {foods.map((food, index) => (
-                    <motion.div
-                      key={food._id}
-                      id={`food-${food._id}`}
-                      initial={{ y: 50, opacity: 0 }}
-                      whileInView={{ y: 0, opacity: 1 }}
-                      transition={{ duration: 0.5, delay: index * 0.1 }}
-                      viewport={{ once: true }}
-                      whileHover={{ y: -5 }}
-                      className="group"
-                    >
-                      <Card sx={{ 
-                        height: '100%',
-                        borderRadius: 2,
-                        boxShadow: theme === 'dark' 
-                          ? '0 2px 8px rgba(0,0,0,0.3)' 
-                          : '0 2px 8px rgba(0,0,0,0.1)',
-                        border: theme === 'dark' 
-                          ? '1px solid #334155' 
-                          : '1px solid #e5e7eb',
-                        backgroundColor: theme === 'dark' ? '#0f172a80' : 'white',
-                        backdropFilter: theme === 'dark' ? 'blur(10px)' : 'none',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        transition: 'transform 0.2s, box-shadow 0.2s',
-                        '&:hover': {
-                          transform: 'translateY(-4px)',
+                  {foods.map((food, index) => {
+                    const imageUrl = getImageUrl(food);
+                    
+                    return (
+                      <motion.div
+                        key={food._id}
+                        id={`food-${food._id}`}
+                        initial={{ y: 50, opacity: 0 }}
+                        whileInView={{ y: 0, opacity: 1 }}
+                        transition={{ duration: 0.5, delay: index * 0.1 }}
+                        viewport={{ once: true }}
+                        whileHover={{ y: -5 }}
+                        className="group"
+                      >
+                        <Card sx={{ 
+                          height: '100%',
+                          borderRadius: 2,
                           boxShadow: theme === 'dark' 
-                            ? '0 8px 24px rgba(0, 255, 255, 0.2)' 
-                            : '0 8px 24px rgba(37, 99, 235, 0.2)'
-                        }
-                      }}>
-                        {/* Food Image */}
-                        <Box sx={{ 
-                          position: 'relative',
-                          height: 180,
-                          overflow: 'hidden',
-                          borderTopLeftRadius: 8,
-                          borderTopRightRadius: 8
+                            ? '0 2px 8px rgba(0,0,0,0.3)' 
+                            : '0 2px 8px rgba(0,0,0,0.1)',
+                          border: theme === 'dark' 
+                            ? '1px solid #334155' 
+                            : '1px solid #e5e7eb',
+                          backgroundColor: theme === 'dark' ? '#0f172a80' : 'white',
+                          backdropFilter: theme === 'dark' ? 'blur(10px)' : 'none',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          transition: 'transform 0.2s, box-shadow 0.2s',
+                          '&:hover': {
+                            transform: 'translateY(-4px)',
+                            boxShadow: theme === 'dark' 
+                              ? '0 8px 24px rgba(0, 255, 255, 0.2)' 
+                              : '0 8px 24px rgba(37, 99, 235, 0.2)'
+                          }
                         }}>
-                          {getImageUrl(food) ? (
-                            <img
-                              src={getImageUrl(food) || ''}
-                              alt={food.name}
-                              style={{ 
+                          {/* Food Image */}
+                          <Box sx={{ 
+                            position: 'relative',
+                            height: 180,
+                            overflow: 'hidden',
+                            borderTopLeftRadius: 8,
+                            borderTopRightRadius: 8
+                          }}>
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt={food.name}
+                                style={{ 
+                                  width: '100%', 
+                                  height: '100%', 
+                                  objectFit: 'cover',
+                                  transition: 'transform 0.3s'
+                                }}
+                                className="group-hover:scale-105"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.onerror = null;
+                                  target.src = '/api/placeholder/400/250';
+                                }}
+                              />
+                            ) : (
+                              <Box sx={{ 
                                 width: '100%', 
                                 height: '100%', 
-                                objectFit: 'cover',
-                                transition: 'transform 0.3s'
-                              }}
-                              className="group-hover:scale-105"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.onerror = null;
-                                target.src = '/api/placeholder/400/250';
+                                backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}>
+                                <Restaurant sx={{ 
+                                  fontSize: 48, 
+                                  color: theme === 'dark' ? '#a8b2d1' : '#94a3b8' 
+                                }} />
+                              </Box>
+                            )}
+                            
+                            {/* Category Badge */}
+                            <Chip
+                              label={getCategoryLabel(food.category)}
+                              size="small"
+                              sx={{ 
+                                position: 'absolute',
+                                top: 8,
+                                right: 8,
+                                height: 24,
+                                fontSize: '0.7rem',
+                                backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                color: theme === 'dark' ? '#a8b2d1' : '#666666'
                               }}
                             />
-                          ) : (
-                            <Box sx={{ 
-                              width: '100%', 
-                              height: '100%', 
-                              backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}>
-                              <Restaurant sx={{ 
-                                fontSize: 48, 
-                                color: theme === 'dark' ? '#a8b2d1' : '#94a3b8' 
-                              }} />
-                            </Box>
-                          )}
+                            
+                            {/* Stock Status Badge */}
+                            <Chip
+                              label={food.quantity_available ? 'In Stock' : 'Out of Stock'}
+                              size="small"
+                              sx={{ 
+                                position: 'absolute',
+                                top: 8,
+                                left: 8,
+                                height: 24,
+                                fontSize: '0.7rem',
+                                backgroundColor: food.quantity_available 
+                                  ? (theme === 'dark' ? '#00ff0020' : '#28a74520')
+                                  : (theme === 'dark' ? '#ff000020' : '#dc354520'),
+                                color: food.quantity_available 
+                                  ? (theme === 'dark' ? '#00ff00' : '#28a745')
+                                  : (theme === 'dark' ? '#ff0000' : '#dc3545')
+                              }}
+                            />
+                          </Box>
                           
-                          {/* Category Badge */}
-                          <Chip
-                            label={getCategoryLabel(food.category)}
-                            size="small"
-                            sx={{ 
-                              position: 'absolute',
-                              top: 8,
-                              right: 8,
-                              height: 24,
-                              fontSize: '0.7rem',
-                              backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                              color: theme === 'dark' ? '#a8b2d1' : '#666666'
-                            }}
-                          />
-                          
-                          {/* Stock Status Badge */}
-                          <Chip
-                            label={food.quantity_available ? 'In Stock' : 'Out of Stock'}
-                            size="small"
-                            sx={{ 
-                              position: 'absolute',
-                              top: 8,
-                              left: 8,
-                              height: 24,
-                              fontSize: '0.7rem',
-                              backgroundColor: food.quantity_available 
-                                ? (theme === 'dark' ? '#00ff0020' : '#28a74520')
-                                : (theme === 'dark' ? '#ff000020' : '#dc354520'),
-                              color: food.quantity_available 
-                                ? (theme === 'dark' ? '#00ff00' : '#28a745')
-                                : (theme === 'dark' ? '#ff0000' : '#dc3545')
-                            }}
-                          />
-                        </Box>
-                        
-                        <CardContent sx={{ p: 3, flexGrow: 1 }}>
-                          {/* Title */}
-                          <Typography 
-                            variant="h6" 
-                            sx={{ 
-                              fontWeight: 'bold',
-                              color: theme === 'dark' ? '#ccd6f6' : '#333333',
-                              mb: 1,
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              lineHeight: 1.3,
-                              fontSize: '1.1rem'
-                            }}
-                          >
-                            {food.name}
-                          </Typography>
-                          
-                          {/* Description */}
-                          <Typography 
-                            variant="body2" 
-                            color={theme === 'dark' ? '#a8b2d1' : '#666666'}
-                            sx={{ 
-                              mb: 2,
-                              display: '-webkit-box',
-                              WebkitLineClamp: 3,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              fontSize: '0.9rem'
-                            }}
-                          >
-                            {food.description}
-                          </Typography>
-                          
-                          {/* Price and Stats */}
-                          <Box sx={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            mt: 'auto',
-                            pt: 2,
-                            borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
-                          }}>
-                            <Typography variant="h6" sx={{ 
-                              fontWeight: 'bold',
-                              color: theme === 'dark' ? '#00ffff' : '#007bff'
-                            }}>
-                              {formatPrice(food.price)}
+                          <CardContent sx={{ p: 3, flexGrow: 1 }}>
+                            {/* Title */}
+                            <Typography 
+                              variant="h6" 
+                              sx={{ 
+                                fontWeight: 'bold',
+                                color: theme === 'dark' ? '#ccd6f6' : '#333333',
+                                mb: 1,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                lineHeight: 1.3,
+                                fontSize: '1.1rem'
+                              }}
+                            >
+                              {food.name}
                             </Typography>
                             
-                            <Box sx={{ display: 'flex', gap: 1.5 }}>
-                              <Tooltip title="Views">
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <RemoveRedEye fontSize="small" sx={{ fontSize: '0.9rem', color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                                  <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                    {food.view}
-                                  </Typography>
-                                </Box>
-                              </Tooltip>
+                            {/* Description */}
+                            <Typography 
+                              variant="body2" 
+                              color={theme === 'dark' ? '#a8b2d1' : '#666666'}
+                              sx={{ 
+                                mb: 2,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                fontSize: '0.9rem'
+                              }}
+                            >
+                              {food.description}
+                            </Typography>
+                            
+                            {/* Price and Stats */}
+                            <Box sx={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              mt: 'auto',
+                              pt: 2,
+                              borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
+                            }}>
+                              <Typography variant="h6" sx={{ 
+                                fontWeight: 'bold',
+                                color: theme === 'dark' ? '#00ffff' : '#007bff'
+                              }}>
+                                {formatPrice(food.price)}
+                              </Typography>
+                              
+                              <Box sx={{ display: 'flex', gap: 1.5 }}>
+                                <Tooltip title="Views">
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <RemoveRedEye fontSize="small" sx={{ fontSize: '0.9rem', color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
+                                    <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
+                                      {food.view}
+                                    </Typography>
+                                  </Box>
+                                </Tooltip>
+                              </Box>
                             </Box>
-                          </Box>
-                        </CardContent>
-                        
-                        {/* Action Buttons */}
-                        <Box sx={{ 
-                          p: 2, 
-                          pt: 0,
-                          display: 'flex', 
-                          gap: 2,
-                          borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
-                        }}>
-                          <Button
-                            size="small"
-                            fullWidth
-                            variant="outlined"
-                            startIcon={<Visibility fontSize="small" />}
-                            onClick={() => handleOpenViewDialog(food)}
-                            disabled={!food.quantity_available}
-                            sx={{
-                              borderRadius: 1,
-                              borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
-                              color: theme === 'dark' ? '#00ffff' : '#007bff',
-                              fontSize: '0.75rem',
-                              py: 0.5,
-                              '&:hover': {
-                                backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
-                              },
-                              '&.Mui-disabled': {
-                                borderColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                                color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
-                              }
-                            }}
-                          >
-                            View Details
-                          </Button>
+                          </CardContent>
                           
-                          <Button
-                            size="small"
-                            fullWidth
-                            variant="contained"
-                            startIcon={<ShoppingCart fontSize="small" />}
-                            onClick={() => handleOpenOrderDialog(food)}
-                            disabled={!food.quantity_available}
-                            sx={{
-                              borderRadius: 1,
-                              background: theme === 'dark'
-                                ? 'linear-gradient(135deg, #00ff00, #00b300)'
-                                : 'linear-gradient(135deg, #28a745, #218838)',
-                              fontSize: '0.75rem',
-                              py: 0.5,
-                              '&:hover': {
+                          {/* Action Buttons */}
+                          <Box sx={{ 
+                            p: 2, 
+                            pt: 0,
+                            display: 'flex', 
+                            gap: 2,
+                            borderTop: theme === 'dark' ? '1px solid #334155' : '1px solid #e5e7eb'
+                          }}>
+                            <Button
+                              size="small"
+                              fullWidth
+                              variant="outlined"
+                              startIcon={<Visibility fontSize="small" />}
+                              onClick={() => handleOpenViewDialog(food)}
+                              disabled={!food.quantity_available}
+                              sx={{
+                                borderRadius: 1,
+                                borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+                                color: theme === 'dark' ? '#00ffff' : '#007bff',
+                                fontSize: '0.75rem',
+                                py: 0.5,
+                                '&:hover': {
+                                  backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                                },
+                                '&.Mui-disabled': {
+                                  borderColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                  color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
+                                }
+                              }}
+                            >
+                              View Details
+                            </Button>
+                            
+                            <Button
+                              size="small"
+                              fullWidth
+                              variant="contained"
+                              startIcon={<ShoppingCart fontSize="small" />}
+                              onClick={() => handleOpenOrderDialog(food)}
+                              disabled={!food.quantity_available}
+                              sx={{
+                                borderRadius: 1,
                                 background: theme === 'dark'
-                                  ? 'linear-gradient(135deg, #00b300, #008000)'
-                                  : 'linear-gradient(135deg, #218838, #1e7e34)'
-                              },
-                              '&.Mui-disabled': {
-                                background: theme === 'dark' ? '#334155' : '#e5e7eb',
-                                color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
-                              }
-                            }}
-                          >
-                            Order Now
-                          </Button>
-                        </Box>
-                      </Card>
-                    </motion.div>
-                  ))}
+                                  ? 'linear-gradient(135deg, #00ff00, #00b300)'
+                                  : 'linear-gradient(135deg, #28a745, #218838)',
+                                fontSize: '0.75rem',
+                                py: 0.5,
+                                '&:hover': {
+                                  background: theme === 'dark'
+                                    ? 'linear-gradient(135deg, #00b300, #008000)'
+                                    : 'linear-gradient(135deg, #218838, #1e7e34)'
+                                },
+                                '&.Mui-disabled': {
+                                  background: theme === 'dark' ? '#334155' : '#e5e7eb',
+                                  color: theme === 'dark' ? '#94a3b8' : '#94a3b8'
+                                }
+                              }}
+                            >
+                              Order Now
+                            </Button>
+                          </Box>
+                        </Card>
+                      </motion.div>
+                    );
+                  })}
                 </div>
 
                 {/* Pagination */}
@@ -1618,6 +1589,15 @@ const PublicFoodPage = () => {
               box-shadow: 0 0 0 0 rgba(0, 123, 255, 0);
             }
           }
+        }
+        
+        .hide-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        
+        .hide-scrollbar::-webkit-scrollbar {
+          display: none;
         }
       `}</style>
 
