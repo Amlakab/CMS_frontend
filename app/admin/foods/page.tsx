@@ -175,7 +175,7 @@ const FoodManagementPage = () => {
   const [selectedFood, setSelectedFood] = useState<Food | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
 
   const [formData, setFormData] = useState<FoodFormData>({
     name: '',
