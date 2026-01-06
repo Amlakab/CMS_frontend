@@ -8,7 +8,7 @@ import {
   Stack, CircularProgress, useMediaQuery,
   Snackbar, Alert, Tooltip,
   TextField, Select, MenuItem, FormControl, InputLabel,
-  Slider, Input
+  Slider
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/lib/theme-context';
@@ -120,9 +120,16 @@ const PublicFoodPage = () => {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Corrected getImageUrl function - same as FoodManagementPage
+  // Fixed getImageUrl function - handles all image formats
   const getImageUrl = (food: Food): string | null => {
     try {
+      // Debug: Log what we're receiving
+      console.log('Food image data:', {
+        hasImageData: !!food.imageData,
+        imageData: food.imageData,
+        hasImage: !!food.image
+      });
+
       // Check if imageData exists and has the expected structure
       if (food.imageData && food.imageData.data) {
         let base64String: string;
@@ -135,8 +142,21 @@ const PublicFoodPage = () => {
           // MongoDB BSON format
           base64String = food.imageData.data.$binary.base64;
         } else if (food.imageData.data.data && Array.isArray(food.imageData.data.data)) {
-          // Buffer format
-          base64String = Buffer.from(food.imageData.data.data).toString('base64');
+          // Buffer format - needs Buffer polyfill for browser
+          try {
+            if (typeof Buffer !== 'undefined') {
+              base64String = Buffer.from(food.imageData.data.data).toString('base64');
+            } else {
+              // Fallback for browser without Buffer
+              const bytes = new Uint8Array(food.imageData.data.data);
+              let binary = '';
+              bytes.forEach((byte) => binary += String.fromCharCode(byte));
+              base64String = btoa(binary);
+            }
+          } catch (bufferError) {
+            console.error('Buffer conversion error:', bufferError);
+            return null;
+          }
         } else {
           console.error('Unknown image data structure:', food.imageData.data);
           return null;
@@ -190,6 +210,7 @@ const PublicFoodPage = () => {
       }
 
       const response = await api.get(`/foods/public/available?${params}`);
+      console.log('API Response:', response.data);
       
       if (forList) {
         setAllFoods(response.data.data.foods || []);
@@ -361,6 +382,16 @@ const PublicFoodPage = () => {
         element.classList.remove('highlight-pulse');
       }, 2000);
     }
+  };
+
+  // Create a simple gray placeholder image for fallback
+  const getPlaceholderImage = (width: number = 400, height: number = 250) => {
+    const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100%" height="100%" fill="${theme === 'dark' ? '#334155' : '#e5e7eb'}"/>
+      <text x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="Arial" font-size="20" 
+            fill="${theme === 'dark' ? '#a8b2d1' : '#666666'}">No Image</text>
+    </svg>`;
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
   };
 
   const themeStyles = {
@@ -582,6 +613,7 @@ const PublicFoodPage = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {foods.map((food, index) => {
                     const imageUrl = getImageUrl(food);
+                    console.log(`Food ${food.name} imageUrl:`, imageUrl);
                     
                     return (
                       <motion.div
@@ -635,9 +667,10 @@ const PublicFoodPage = () => {
                                 }}
                                 className="group-hover:scale-105"
                                 onError={(e) => {
+                                  console.error('Image failed to load:', e);
                                   const target = e.target as HTMLImageElement;
                                   target.onerror = null;
-                                  target.src = '/api/placeholder/400/250';
+                                  target.src = getPlaceholderImage(400, 250);
                                 }}
                               />
                             ) : (
@@ -1128,7 +1161,7 @@ const PublicFoodPage = () => {
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.onerror = null;
-                      target.src = '/api/placeholder/1200/400';
+                      target.src = getPlaceholderImage(800, 400);
                     }}
                   />
                 </Box>
