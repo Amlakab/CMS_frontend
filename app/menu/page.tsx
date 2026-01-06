@@ -350,12 +350,11 @@ const PublicFoodPage = () => {
     }
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(price);
-  };
+const formatPrice = (price: number): string => {
+  return `ETB ${price.toLocaleString('am-ET')}`;
+};
+
+
 
   const getCategoryLabel = (category: string) => {
     const cat = categories.find(c => c.value === category);
@@ -1182,7 +1181,7 @@ const PublicFoodPage = () => {
                       backgroundColor: theme === 'dark' ? '#334155' : '#e5e7eb'
                     }}
                   />
-                  
+              
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <AttachMoney fontSize="small" sx={{ color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
                     <Typography variant="h5" sx={{ 

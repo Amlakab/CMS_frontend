@@ -100,7 +100,7 @@ export default function LoginPage() {
         });
 
         // Role routing for cafeteria management
-        if (user.role === 'admin') {
+        if (user.role === 'admin' || user.role === 'Priesedant' || user.role === 'Vice-Priesedant') {
           router.push('/admin');
         } else {
           router.push('/dashboard');

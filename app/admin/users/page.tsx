@@ -17,64 +17,25 @@ import {
   People, Block, CheckCircle,
   PersonAdd, Refresh, Delete, Lock,
   FilterList, ExpandMore, ExpandLess, Edit,
-  Email, Phone, School, AccountCircle,
+  Email, Phone, AccountCircle,
   Category, Group, Visibility, Person,
   AdminPanelSettings, Assignment, BusinessCenter,
   School as SchoolIcon, Engineering, MusicNote,
   TrendingUp, Handshake, Build,
-  Badge as BadgeIcon, CalendarToday, LocationOn,
-  Church, Female, Male, Cake, Work,
-  Translate, Language, AccessTime, Business,
-  Home, Call, PersonPin, Description,
-  SupervisorAccount, Search, Fingerprint // Added for student ID
+  CalendarToday, LocationOn,
+  Church, AccessTime, Business,
+  Call, PersonPin, Description,
+  SupervisorAccount, Search
 } from '@mui/icons-material';
 import api from '@/app/utils/api';
 
 // Types
-interface Student {
-  _id: string;
-  gibyGubayeId?: string; // Made optional for safety
-  firstName: string;
-  middleName?: string;
-  lastName: string;
-  phone: string;
-  email: string;
-  college: string;
-  department: string;
-  region: string;
-  photo?: string;
-  gender: 'male' | 'female';
-  motherName: string;
-  block: string;
-  dorm: string;
-  university: string;
-  batch: string;
-  zone: string;
-  wereda: string;
-  kebele: string;
-  church: string;
-  authority: string;
-  job: string;
-  motherTongue: string;
-  additionalLanguages: string[];
-  dateOfBirth: string;
-  emergencyContact: string;
-  attendsCourse: boolean;
-  courseName?: string;
-  courseChurch?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface User {
   _id: string;
-  gibyGubayeId?: string; // Made optional for safety
   name: string;
   email: string;
   phone: string;
   background?: string;
-  studentId: Student;
   role:
     | 'user'
     | 'disk-user'
@@ -166,18 +127,12 @@ const UsersPage = () => {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   
-  // Students for dropdown
-  const [students, setStudents] = useState<Student[]>([]);
-  const [studentsLoading, setStudentsLoading] = useState(false);
-  const [studentSearch, setStudentSearch] = useState('');
-
   // Form states
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     background: '',
-    studentId: '',
     password: '',
     role: 'user' as User['role']
   });
@@ -187,7 +142,6 @@ const UsersPage = () => {
     email: '',
     phone: '',
     background: '',
-    studentId: '',
     role: 'user' as User['role']
   });
 
@@ -271,13 +225,6 @@ const UsersPage = () => {
     fetchStats();
   }, [filters.page, filters.limit, filters.role, filters.status, filters.search]);
 
-  // Fetch students for dropdown
-  useEffect(() => {
-    if (openAddDialog || openEditDialog) {
-      fetchStudents();
-    }
-  }, [openAddDialog, openEditDialog]);
-
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -317,29 +264,17 @@ const UsersPage = () => {
     }
   };
 
-  const fetchStudents = async () => {
-    try {
-      setStudentsLoading(true);
-      const response = await api.get('/students?limit=100');
-      setStudents(response.data.data.students || []);
-    } catch (error: any) {
-      console.error('Failed to fetch students:', error);
-    } finally {
-      setStudentsLoading(false);
-    }
-  };
-
   const handleCreateUser = async () => {
     try {
       await api.post('/user/register', formData);
       setSuccess('User created successfully');
       setOpenAddDialog(false);
+      // Reset form data
       setFormData({
         name: '',
         email: '',
         phone: '',
         background: '',
-        studentId: '',
         password: '',
         role: 'user'
       });
@@ -421,7 +356,6 @@ const UsersPage = () => {
       email: user.email,
       phone: user.phone,
       background: user.background || '',
-      studentId: user.studentId._id,
       role: user.role
     });
     setOpenEditDialog(true);
@@ -460,32 +394,6 @@ const UsersPage = () => {
 
   const handlePasswordFormChange = (field: string, value: string) => {
     setPasswordFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleStudentSelect = (studentId: string) => {
-    const selectedStudent = students.find(s => s._id === studentId);
-    if (selectedStudent) {
-      setFormData(prev => ({
-        ...prev,
-        studentId,
-        name: `${selectedStudent.firstName} ${selectedStudent.middleName || ''} ${selectedStudent.lastName}`.trim(),
-        email: selectedStudent.email,
-        phone: selectedStudent.phone
-      }));
-    }
-  };
-
-  const handleEditStudentSelect = (studentId: string) => {
-    const selectedStudent = students.find(s => s._id === studentId);
-    if (selectedStudent) {
-      setEditFormData(prev => ({
-        ...prev,
-        studentId,
-        name: `${selectedStudent.firstName} ${selectedStudent.middleName || ''} ${selectedStudent.lastName}`.trim(),
-        email: selectedStudent.email,
-        phone: selectedStudent.phone
-      }));
-    }
   };
 
   const resetFilters = () => {
@@ -537,19 +445,10 @@ const UsersPage = () => {
     return isActive ? 'success' : 'error';
   };
 
-  const getStudentFullName = (student: Student) => {
-    return `${student.firstName} ${student.middleName || ''} ${student.lastName}`.trim();
-  };
-
   // Get role icon
   const getRoleIcon = (role: string) => {
     const roleOption = ROLE_OPTIONS.find(r => r.value === role);
     return roleOption?.icon || <Person />;
-  };
-
-  // Get gender icon
-  const getGenderIcon = (gender: string) => {
-    return gender === 'male' ? <Male /> : <Female />;
   };
 
   // Get avatar color
@@ -566,63 +465,6 @@ const UsersPage = () => {
       return `${nameParts[0].charAt(0)}${nameParts[1].charAt(0)}`.toUpperCase();
     }
     return user.name.charAt(0).toUpperCase();
-  };
-
-  // Calculate age from date of birth
-  const calculateAge = (dateOfBirth: string) => {
-    const today = new Date();
-    const birthDate = new Date(dateOfBirth);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
-  // Filter students based on search - UPDATED WITH SAFETY CHECK
-  const filteredStudents = students.filter(student => {
-    const fullName = getStudentFullName(student).toLowerCase();
-    const searchTerm = studentSearch.toLowerCase();
-    return fullName.includes(searchTerm) || 
-           (student.email && student.email.toLowerCase().includes(searchTerm)) ||
-           student.phone.includes(searchTerm) ||
-           (student.gibyGubayeId && student.gibyGubayeId.toLowerCase().includes(searchTerm));
-  });
-
-  // Helper function to get photo URL
-  const getPhotoUrl = (photoPath?: string): string | null => {
-    if (!photoPath) return null;
-    if (photoPath.startsWith('http')) return photoPath;
-    
-    const serverUrl = 'http://localhost:3001';
-    let cleanPath = photoPath;
-    
-    if (!cleanPath.startsWith('/uploads')) {
-      if (cleanPath.startsWith('uploads')) {
-        cleanPath = '/' + cleanPath;
-      } else {
-        cleanPath = `/uploads/students/${cleanPath}`;
-      }
-    }
-    
-    return `${serverUrl}${cleanPath}`;
-  };
-
-  // Safe display function for gibyGubayeId
-  const displayStudentId = (student: Student | undefined): string => {
-    if (!student || !student.gibyGubayeId || student.gibyGubayeId.trim() === '') {
-      return 'N/A';
-    }
-    return student.gibyGubayeId;
-  };
-
-  // Safe display function for user's gibyGubayeId
-  const displayUserId = (user: User | undefined): string => {
-    if (!user || !user.gibyGubayeId || user.gibyGubayeId.trim() === '') {
-      return 'N/A';
-    }
-    return user.gibyGubayeId;
   };
 
   // Render form section
@@ -844,7 +686,7 @@ const UsersPage = () => {
                 </Box>
               </Box>
               
-              {/* Filter Controls - UPDATED SEARCH PLACEHOLDER */}
+              {/* Filter Controls */}
               <Box sx={{ 
                 display: 'grid',
                 gridTemplateColumns: {
@@ -860,7 +702,7 @@ const UsersPage = () => {
                   label="Search Users"
                   value={filters.search}
                   onChange={(e) => handleFilterChange('search', e.target.value)}
-                  placeholder="Name, email, phone, or student ID..."
+                  placeholder="Name, email, or phone..."
                   InputProps={{
                     startAdornment: (
                       <Search sx={{ 
@@ -949,7 +791,7 @@ const UsersPage = () => {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.3 }}
           >
-            {/* Mobile View - Cards - UPDATED WITH STUDENT ID */}
+            {/* Mobile View - Cards */}
             {isMobile ? (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {users.map((user) => {
@@ -985,13 +827,6 @@ const UsersPage = () => {
                             }}>
                               {user.name}
                             </Typography>
-                            {/* Student ID Display */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                              <Fingerprint fontSize="small" sx={{ color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                {displayUserId(user)}
-                              </Typography>
-                            </Box>
                             <Chip
                               label={user.role}
                               color={getRoleColor(user.role)}
@@ -1056,15 +891,6 @@ const UsersPage = () => {
                                 </Typography>
                               </Box>
                             )}
-                            
-                            <Box sx={{ mb: 2 }}>
-                              <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'} sx={{ fontWeight: 500, mb: 0.5 }}>
-                                Student:
-                              </Typography>
-                              <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                {getStudentFullName(user.studentId)}
-                              </Typography>
-                            </Box>
                             
                             <Box sx={{ 
                               display: 'flex', 
@@ -1185,7 +1011,7 @@ const UsersPage = () => {
                 })}
               </Box>
             ) : (
-              /* Desktop/Tablet View - Table - UPDATED WITH STUDENT ID COLUMN */
+              /* Desktop/Tablet View - Table */
               <Card sx={{ 
                 borderRadius: 2,
                 boxShadow: theme === 'dark' 
@@ -1213,15 +1039,6 @@ const UsersPage = () => {
                         }}>
                           Name
                         </TableCell>
-                        {/* Added Student ID Column */}
-                        <TableCell sx={{ 
-                          color: 'white', 
-                          fontWeight: 'bold',
-                          fontSize: '0.875rem',
-                          py: 2
-                        }}>
-                          Student ID
-                        </TableCell>
                         <TableCell sx={{ 
                           color: 'white', 
                           fontWeight: 'bold',
@@ -1229,14 +1046,6 @@ const UsersPage = () => {
                           py: 2
                         }}>
                           Contact
-                        </TableCell>
-                        <TableCell sx={{ 
-                          color: 'white', 
-                          fontWeight: 'bold',
-                          fontSize: '0.875rem',
-                          py: 2
-                        }}>
-                          Student
                         </TableCell>
                         <TableCell sx={{ 
                           color: 'white', 
@@ -1291,19 +1100,6 @@ const UsersPage = () => {
                               {user.name}
                             </Typography>
                           </TableCell>
-                          {/* Student ID Cell */}
-                          <TableCell sx={{ py: 2.5 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Fingerprint fontSize="small" sx={{ color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                              <Typography variant="body2" sx={{ 
-                                fontWeight: 'medium', 
-                                color: theme === 'dark' ? '#ccd6f6' : '#333333',
-                                fontFamily: 'monospace'
-                              }}>
-                                {displayUserId(user)}
-                              </Typography>
-                            </Box>
-                          </TableCell>
                           <TableCell sx={{ py: 2.5 }}>
                             <Box>
                               <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
@@ -1313,11 +1109,6 @@ const UsersPage = () => {
                                 {user.phone}
                               </Typography>
                             </Box>
-                          </TableCell>
-                          <TableCell sx={{ py: 2.5 }}>
-                            <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                              {getStudentFullName(user.studentId)}
-                            </Typography>
                           </TableCell>
                           <TableCell sx={{ py: 2.5 }}>
                             <Chip
@@ -1487,7 +1278,7 @@ const UsersPage = () => {
           </motion.div>
         )}
 
-        {/* Add User Dialog - UPDATED WITH STUDENT SEARCH INCLUDING gibyGubayeId */}
+        {/* Add User Dialog */}
         <Dialog 
           open={openAddDialog} 
           onClose={() => setOpenAddDialog(false)} 
@@ -1513,61 +1304,7 @@ const UsersPage = () => {
           </DialogTitle>
           <DialogContent sx={{ p: 3 }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {/* Student Selection with Search - UPDATED */}
-              {renderFormSection(
-                "Select Student",
-                <Search />,
-                <>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Search Student"
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                    placeholder="Search by name, email, phone, or student ID..."
-                    sx={textFieldStyle}
-                  />
-                  
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Select Student</InputLabel>
-                    <Select
-                      value={formData.studentId}
-                      label="Select Student"
-                      onChange={(e) => handleStudentSelect(e.target.value)}
-                      required
-                      sx={selectStyle}
-                    >
-                      <MenuItem value="">
-                        <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                          Select a student
-                        </Typography>
-                      </MenuItem>
-                      {filteredStudents.map((student) => (
-                        <MenuItem key={student._id} value={student._id}>
-                          <Box sx={{ width: '100%' }}>
-                            <Typography variant="body2" color={theme === 'dark' ? '#ccd6f6' : '#333333'}>
-                              {getStudentFullName(student)}
-                            </Typography>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <Fingerprint fontSize="small" sx={{ color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                                <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                  ID: {student.gibyGubayeId || 'N/A'}
-                                </Typography>
-                              </Box>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                {student.phone}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </>
-              )}
-
-              {/* User Information - Auto-filled from student but editable */}
+              {/* User Information */}
               {renderFormSection(
                 "User Information",
                 <Person />,
@@ -1583,7 +1320,7 @@ const UsersPage = () => {
                         label="Full Name"
                         value={formData.name}
                         onChange={(e) => handleFormChange('name', e.target.value)}
-                        placeholder="Auto-filled from student"
+                        placeholder="Enter user's full name"
                         required
                         size="small"
                         sx={textFieldStyle}
@@ -1594,7 +1331,7 @@ const UsersPage = () => {
                         type="email"
                         value={formData.email}
                         onChange={(e) => handleFormChange('email', e.target.value)}
-                        placeholder="Auto-filled from student"
+                        placeholder="Enter email address"
                         required
                         size="small"
                         sx={textFieldStyle}
@@ -1611,7 +1348,7 @@ const UsersPage = () => {
                         label="Phone Number"
                         value={formData.phone}
                         onChange={(e) => handleFormChange('phone', e.target.value)}
-                        placeholder="Auto-filled from student"
+                        placeholder="Enter phone number"
                         required
                         size="small"
                         sx={textFieldStyle}
@@ -1698,7 +1435,7 @@ const UsersPage = () => {
             <Button 
               onClick={handleCreateUser} 
               variant="contained"
-              disabled={!formData.name || !formData.email || !formData.phone || !formData.studentId || !formData.password}
+              disabled={!formData.name || !formData.email || !formData.phone || !formData.password}
               sx={{
                 background: theme === 'dark'
                   ? 'linear-gradient(135deg, #00ffff, #00b3b3)'
@@ -1720,7 +1457,7 @@ const UsersPage = () => {
           </DialogActions>
         </Dialog>
 
-        {/* Edit User Dialog - UPDATED WITH STUDENT SEARCH INCLUDING gibyGubayeId */}
+        {/* Edit User Dialog */}
         <Dialog 
           open={openEditDialog} 
           onClose={() => setOpenEditDialog(false)} 
@@ -1746,61 +1483,7 @@ const UsersPage = () => {
           </DialogTitle>
           <DialogContent sx={{ p: 3 }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {/* Student Selection with Search - UPDATED */}
-              {renderFormSection(
-                "Select Student",
-                <Search />,
-                <>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Search Student"
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                    placeholder="Search by name, email, phone, or student ID..."
-                    sx={textFieldStyle}
-                  />
-                  
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Select Student</InputLabel>
-                    <Select
-                      value={editFormData.studentId}
-                      label="Select Student"
-                      onChange={(e) => handleEditStudentSelect(e.target.value)}
-                      required
-                      sx={selectStyle}
-                    >
-                      <MenuItem value="">
-                        <Typography variant="body2" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                          Select a student
-                        </Typography>
-                      </MenuItem>
-                      {filteredStudents.map((student) => (
-                        <MenuItem key={student._id} value={student._id}>
-                          <Box sx={{ width: '100%' }}>
-                            <Typography variant="body2" color={theme === 'dark' ? '#ccd6f6' : '#333333'}>
-                              {getStudentFullName(student)}
-                            </Typography>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <Fingerprint fontSize="small" sx={{ color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                                <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                  ID: {student.gibyGubayeId || 'N/A'}
-                                </Typography>
-                              </Box>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                {student.phone}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </>
-              )}
-
-              {/* User Information - Auto-filled from student but editable */}
+              {/* User Information */}
               {renderFormSection(
                 "User Information",
                 <Person />,
@@ -1816,7 +1499,7 @@ const UsersPage = () => {
                         label="Full Name"
                         value={editFormData.name}
                         onChange={(e) => handleEditFormChange('name', e.target.value)}
-                        placeholder="Auto-filled from student"
+                        placeholder="Enter user's full name"
                         required
                         size="small"
                         sx={textFieldStyle}
@@ -1827,7 +1510,7 @@ const UsersPage = () => {
                         type="email"
                         value={editFormData.email}
                         onChange={(e) => handleEditFormChange('email', e.target.value)}
-                        placeholder="Auto-filled from student"
+                        placeholder="Enter email address"
                         required
                         size="small"
                         sx={textFieldStyle}
@@ -1844,7 +1527,7 @@ const UsersPage = () => {
                         label="Phone Number"
                         value={editFormData.phone}
                         onChange={(e) => handleEditFormChange('phone', e.target.value)}
-                        placeholder="Auto-filled from student"
+                        placeholder="Enter phone number"
                         required
                         size="small"
                         sx={textFieldStyle}
@@ -2026,7 +1709,7 @@ const UsersPage = () => {
           </DialogActions>
         </Dialog>
 
-        {/* View User Dialog - UPDATED WITH gibyGubayeId */}
+        {/* View User Dialog */}
         <Dialog 
           open={openViewDialog} 
           onClose={() => setOpenViewDialog(false)} 
@@ -2068,13 +1751,6 @@ const UsersPage = () => {
                     <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                       {selectedUser.name}
                     </Typography>
-                    {/* Updated to show gibyGubayeId */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Fingerprint fontSize="small" sx={{ color: 'rgba(255,255,255,0.8)' }} />
-                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-                        Student ID: {displayUserId(selectedUser)}
-                      </Typography>
-                    </Box>
                   </Box>
                 </Box>
               </DialogTitle>
@@ -2125,13 +1801,6 @@ const UsersPage = () => {
                                 color={getRoleColor(selectedUser.role)}
                                 size="small"
                               />
-                            </Box>
-                            {/* Updated to show gibyGubayeId */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Fingerprint fontSize="small" sx={{ color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Student ID: {displayUserId(selectedUser)}
-                              </Typography>
                             </Box>
                           </Box>
 
@@ -2219,309 +1888,6 @@ const UsersPage = () => {
                               </Typography>
                             </Box>
                           )}
-                        </Box>
-                      </CardContent>
-                    </Card>
-
-                    {/* Student Information - UPDATED WITH gibyGubayeId */}
-                    <Card sx={{ 
-                      mb: 3, 
-                      borderRadius: 2, 
-                      boxShadow: theme === 'dark' 
-                        ? '0 2px 8px rgba(0,0,0,0.3)' 
-                        : '0 2px 8px rgba(0,0,0,0.1)',
-                      backgroundColor: theme === 'dark' ? '#0f172a80' : 'white'
-                    }}>
-                      <CardContent>
-                        <Typography variant="h6" sx={{ 
-                          mb: 2, 
-                          fontWeight: 'bold',
-                          color: theme === 'dark' ? '#ccd6f6' : '#333333',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1
-                        }}>
-                          <School /> Associated Student Information
-                        </Typography>
-                        
-                        {/* Student ID Display */}
-                        <Box sx={{ mb: 3 }}>
-                          <Typography variant="subtitle1" sx={{ 
-                            mb: 1, 
-                            fontWeight: 'bold',
-                            color: theme === 'dark' ? '#00ffff' : '#007bff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }}>
-                            <Fingerprint /> Student ID
-                          </Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, bgcolor: theme === 'dark' ? '#1e293b' : '#f8f9fa', borderRadius: 1 }}>
-                            <Fingerprint sx={{ color: theme === 'dark' ? '#00ffff' : '#007bff' }} />
-                            <Typography variant="h6" sx={{ fontWeight: 'bold', color: theme === 'dark' ? '#ccd6f6' : '#333333', fontFamily: 'monospace' }}>
-                              {displayStudentId(selectedUser.studentId)}
-                            </Typography>
-                          </Box>
-                        </Box>
-
-                        {/* Personal Information */}
-                        <Box sx={{ mb: 3 }}>
-                          <Typography variant="subtitle1" sx={{ 
-                            mb: 1, 
-                            fontWeight: 'bold',
-                            color: theme === 'dark' ? '#00ffff' : '#007bff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }}>
-                            <PersonPin /> Personal Information
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Full Name
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {getStudentFullName(selectedUser.studentId)}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Gender
-                              </Typography>
-                              <Box sx={{ mt: 0.5 }}>
-                                <Chip
-                                  icon={getGenderIcon(selectedUser.studentId.gender)}
-                                  label={selectedUser.studentId.gender}
-                                  size="small"
-                                />
-                              </Box>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Mother's Name
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.motherName}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Date of Birth
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {formatDate(selectedUser.studentId.dateOfBirth)} ({calculateAge(selectedUser.studentId.dateOfBirth)} years)
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </Box>
-
-                        {/* Contact Information */}
-                        <Box sx={{ mb: 3 }}>
-                          <Typography variant="subtitle1" sx={{ 
-                            mb: 1, 
-                            fontWeight: 'bold',
-                            color: theme === 'dark' ? '#00ffff' : '#007bff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }}>
-                            <Call /> Contact Information
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Student Phone
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.phone}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Student Email
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.email}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Emergency Contact
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.emergencyContact}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </Box>
-
-                        {/* Academic Information */}
-                        <Box sx={{ mb: 3 }}>
-                          <Typography variant="subtitle1" sx={{ 
-                            mb: 1, 
-                            fontWeight: 'bold',
-                            color: theme === 'dark' ? '#00ffff' : '#007bff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }}>
-                            <SchoolIcon /> Academic Information
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                University
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.university}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                College
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.college}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Department
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.department}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Batch
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.batch}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Block
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.block}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Dorm
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.dorm}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </Box>
-
-                        {/* Address Information */}
-                        <Box sx={{ mb: 3 }}>
-                          <Typography variant="subtitle1" sx={{ 
-                            mb: 1, 
-                            fontWeight: 'bold',
-                            color: theme === 'dark' ? '#00ffff' : '#007bff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }}>
-                            <LocationOn /> Address Information
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Region
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.region}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Zone
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.zone}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Wereda
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.wereda}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Kebele
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.kebele}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </Box>
-
-                        {/* Religious & Language Information */}
-                        <Box>
-                          <Typography variant="subtitle1" sx={{ 
-                            mb: 1, 
-                            fontWeight: 'bold',
-                            color: theme === 'dark' ? '#00ffff' : '#007bff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                          }}>
-                            <Church /> Religious & Language Information
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Church
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.church}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Authority
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.authority}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Job/Profession
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.job}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ minWidth: isMobile ? '100%' : '200px', flex: 1 }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Mother Tongue
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.motherTongue}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ width: '100%' }}>
-                              <Typography variant="caption" color={theme === 'dark' ? '#a8b2d1' : '#666666'}>
-                                Additional Languages
-                              </Typography>
-                              <Typography variant="body1" sx={{ fontWeight: 'medium', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                                {selectedUser.studentId.additionalLanguages?.join(', ') || 'None'}
-                              </Typography>
-                            </Box>
-                          </Box>
                         </Box>
                       </CardContent>
                     </Card>
