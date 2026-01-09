@@ -356,8 +356,8 @@ const Navbar: React.FC = () => {
                     </Link>
                   )}
                   <Link
-                    href="/dashboard"
-                    className={mobileNavLinkClasses('/dashboard')}
+                    href="/admin"
+                    className={mobileNavLinkClasses('/admin')}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Dashboard
