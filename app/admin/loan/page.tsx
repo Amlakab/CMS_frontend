@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Card, CardContent,
   TextField, Table, TableBody, TableCell,
@@ -11,7 +11,8 @@ import {
   IconButton, Dialog, DialogTitle, DialogContent,
   DialogActions, Button, Avatar,
   FormControlLabel, Checkbox, Divider,
-  Tooltip, Badge, Paper, Stack
+  Tooltip, Badge, Paper, Stack,
+  Collapse
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/lib/theme-context';
@@ -25,7 +26,8 @@ import {
   TrendingDown, DateRange, Receipt,
   ViewList, CheckBox, CheckBoxOutlineBlank,
   ArrowUpward, ArrowDownward, Visibility,
-  Download, Print, Share
+  Download, Print, Share,
+  Close
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -174,13 +176,16 @@ const LoansPage = () => {
   const [selectedLoans, setSelectedLoans] = useState<string[]>([]);
   const [expandedLoan, setExpandedLoan] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  
+  // Mobile filter state
+  const [showFilters, setShowFilters] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<LoanFormData>({
     loanerId: '',
     name: '',
     amount: '',
-    reason: '',
+    reason: 'No Reason Provided',
     loanType: 'TAKEN',
     date: new Date(),
     status: 'UNPAID'
@@ -273,7 +278,7 @@ const LoansPage = () => {
     }
   };
 
-  // Stat cards - FIXED TypeScript errors and amount calculations
+  // Stat cards
   const statCards = [
     {
       title: 'Total Loans',
@@ -297,7 +302,6 @@ const LoansPage = () => {
       value: stats?.summary.paidLoans || 0,
       icon: <Paid sx={{ fontSize: 28 }} />,
       color: statColors.paid,
-      // Calculate paid amount: total taken amount minus unpaid taken amount + total given amount minus unpaid given amount
       amount: ((stats?.summary.totalTakenAmount || 0) - (stats?.summary.totalUnpaidTakenAmount || 0)) + 
               ((stats?.summary.totalGivenAmount || 0) - (stats?.summary.totalUnpaidGivenAmount || 0))
     },
@@ -316,7 +320,7 @@ const LoansPage = () => {
     fetchFilterOptions();
   }, [filters.page, filters.limit, filters.loanType, filters.status, filters.search, filters.loanerId, filters.name, filters.reason, filters.startDate, filters.endDate, filters.minAmount, filters.maxAmount]);
 
-  const fetchLoans = async () => {
+  const fetchLoans = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -349,27 +353,27 @@ const LoansPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await api.get('/loans/stats');
       setStats(response.data.data);
     } catch (error: any) {
       console.error('Failed to fetch stats:', error);
     }
-  };
+  }, []);
 
-  const fetchFilterOptions = async () => {
+  const fetchFilterOptions = useCallback(async () => {
     try {
       const response = await api.get('/loans/filter-options');
       setFilterOptions(response.data.data);
     } catch (error: any) {
       console.error('Failed to fetch filter options:', error);
     }
-  };
+  }, []);
 
-  const handleCreateLoan = async () => {
+  const handleCreateLoan = useCallback(async () => {
     try {
       const payload = {
         ...formData,
@@ -386,9 +390,9 @@ const LoansPage = () => {
     } catch (error: any) {
       setError(error.response?.data?.message || 'Failed to create loan');
     }
-  };
+  }, [formData, fetchLoans, fetchStats]);
 
-  const handleUpdateLoan = async () => {
+  const handleUpdateLoan = useCallback(async () => {
     if (!selectedLoan) return;
 
     try {
@@ -407,9 +411,9 @@ const LoansPage = () => {
     } catch (error: any) {
       setError(error.response?.data?.message || 'Failed to update loan');
     }
-  };
+  }, [formData, selectedLoan, fetchLoans, fetchStats]);
 
-  const handleMarkAsPaid = async (loanId: string) => {
+  const handleMarkAsPaid = useCallback(async (loanId: string) => {
     try {
       await api.patch(`/loans/${loanId}/mark-paid`);
       setSuccess('Loan marked as paid successfully');
@@ -418,9 +422,9 @@ const LoansPage = () => {
     } catch (error: any) {
       setError(error.response?.data?.message || 'Failed to mark loan as paid');
     }
-  };
+  }, [fetchLoans, fetchStats]);
 
-  const handleBulkMarkAsPaid = async () => {
+  const handleBulkMarkAsPaid = useCallback(async () => {
     try {
       await api.post('/loans/bulk-mark-paid', { loanIds: selectedLoans });
       setSuccess(`${selectedLoans.length} loans marked as paid successfully`);
@@ -431,9 +435,9 @@ const LoansPage = () => {
     } catch (error: any) {
       setError(error.response?.data?.message || 'Failed to mark loans as paid');
     }
-  };
+  }, [selectedLoans, fetchLoans, fetchStats]);
 
-  const handleDeleteLoan = async () => {
+  const handleDeleteLoan = useCallback(async () => {
     if (!selectedLoan) return;
 
     try {
@@ -446,9 +450,9 @@ const LoansPage = () => {
     } catch (error: any) {
       setError('Failed to delete loan');
     }
-  };
+  }, [selectedLoan, fetchLoans, fetchStats]);
 
-  const handleOpenEditDialog = (loan: Loan) => {
+  const handleOpenEditDialog = useCallback((loan: Loan) => {
     setSelectedLoan(loan);
     setIsEditMode(true);
     setFormData({
@@ -461,36 +465,36 @@ const LoansPage = () => {
       status: loan.status
     });
     setOpenDialog(true);
-  };
+  }, []);
 
-  const handleOpenViewDialog = (loan: Loan) => {
+  const handleOpenViewDialog = useCallback((loan: Loan) => {
     setSelectedLoan(loan);
     setOpenViewDialog(true);
-  };
+  }, []);
 
-  const handleOpenCreateDialog = () => {
+  const handleOpenCreateDialog = useCallback(() => {
     setIsEditMode(false);
     resetForm();
     setOpenDialog(true);
-  };
+  }, []);
 
-  const handleFilterChange = (field: string, value: string | number) => {
+  const handleFilterChange = useCallback((field: string, value: string | number) => {
     setFilters(prev => ({
       ...prev,
       [field]: value,
       ...(field !== 'page' && { page: 1 })
     }));
-  };
+  }, []);
 
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+  const handlePageChange = useCallback((event: React.ChangeEvent<unknown>, value: number) => {
     handleFilterChange('page', value);
-  };
+  }, [handleFilterChange]);
 
-  const handleFormChange = (field: keyof LoanFormData, value: any) => {
+  const handleFormChange = useCallback((field: keyof LoanFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       loanerId: '',
       name: '',
@@ -500,9 +504,9 @@ const LoansPage = () => {
       date: new Date(),
       status: 'UNPAID'
     });
-  };
+  }, []);
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setFilters({
       search: '',
       loanType: '',
@@ -518,59 +522,60 @@ const LoansPage = () => {
       limit: 10
     });
     setSelectedLoans([]);
-  };
+    setShowFilters(false);
+  }, []);
 
-  const toggleExpandLoan = (loanId: string) => {
+  const toggleExpandLoan = useCallback((loanId: string) => {
     setExpandedLoan(expandedLoan === loanId ? null : loanId);
-  };
+  }, [expandedLoan]);
 
-  const toggleSelectLoan = (loanId: string) => {
+  const toggleSelectLoan = useCallback((loanId: string) => {
     setSelectedLoans(prev => 
       prev.includes(loanId) 
         ? prev.filter(id => id !== loanId)
         : [...prev, loanId]
     );
-  };
+  }, []);
 
-  const toggleSelectAll = () => {
+  const toggleSelectAll = useCallback(() => {
     if (selectedLoans.length === loans.length) {
       setSelectedLoans([]);
     } else {
       setSelectedLoans(loans.map(loan => loan._id));
     }
-  };
+  }, [loans, selectedLoans.length]);
 
-  const formatDate = (dateString: string | Date) => {
+  const formatDate = useCallback((dateString: string | Date) => {
     return format(new Date(dateString), 'MMM dd, yyyy');
-  };
+  }, []);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('en-ET', {
       style: 'currency',
       currency: 'ETB',
       minimumFractionDigits: 2
     }).format(amount);
-  };
+  }, []);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     return status === 'PAID' ? 'success' : 'error';
-  };
+  }, []);
 
-  const getLoanTypeColor = (loanType: string) => {
+  const getLoanTypeColor = useCallback((loanType: string) => {
     return loanType === 'TAKEN' ? 'warning' : 'info';
-  };
+  }, []);
 
-  const getLoanTypeIcon = (loanType: string) => {
+  const getLoanTypeIcon = useCallback((loanType: string) => {
     return loanType === 'TAKEN' ? <ArrowDownward fontSize="small" /> : <ArrowUpward fontSize="small" />;
-  };
+  }, []);
 
-  const getAvatarColor = (name: string) => {
+  const getAvatarColor = useCallback((name: string) => {
     const colors = ['#1976d2', '#2e7d32', '#ed6c02', '#d32f2f', '#7b1fa2', '#00796b', '#388e3c', '#f57c00', '#0288d1', '#c2185b'];
     const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
     return colors[index];
-  };
+  }, []);
 
-  const getInitials = (name: string) => {
+  const getInitials = useCallback((name: string) => {
     const nameParts = name.split(' ').filter(part => part.length > 0);
     if (nameParts.length >= 2) {
       return `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase();
@@ -578,13 +583,206 @@ const LoansPage = () => {
       return nameParts[0].substring(0, 2).toUpperCase();
     }
     return '??';
-  };
+  }, []);
 
   // Calculate this month's range
   const thisMonthStart = startOfMonth(new Date());
   const thisMonthEnd = endOfMonth(new Date());
   const lastMonthStart = startOfMonth(subMonths(new Date(), 1));
   const lastMonthEnd = endOfMonth(subMonths(new Date(), 1));
+
+  // Render filter controls
+  const renderFilterControls = useCallback(() => {
+    const filterContent = (
+      <Box sx={{ 
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: '1fr',
+          sm: 'repeat(2, 1fr)',
+          md: 'repeat(4, 1fr)'
+        },
+        gap: 3
+      }}>
+        <TextField
+          fullWidth
+          size="small"
+          label="Search Loans"
+          value={filters.search}
+          onChange={(e) => handleFilterChange('search', e.target.value)}
+          placeholder="Loan ID, name, reason..."
+          InputProps={{
+            startAdornment: (
+              <Search sx={{ 
+                color: theme === 'dark' ? '#a8b2d1' : '#666666',
+                mr: 1 
+              }} />
+            ),
+          }}
+          sx={textFieldStyle}
+        />
+        
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Loan Type</InputLabel>
+          <Select
+            value={filters.loanType}
+            label="Loan Type"
+            onChange={(e) => handleFilterChange('loanType', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Types</MenuItem>
+            <MenuItem value="TAKEN">Taken</MenuItem>
+            <MenuItem value="GIVEN">Given</MenuItem>
+          </Select>
+        </FormControl>
+        
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Status</InputLabel>
+          <Select
+            value={filters.status}
+            label="Status"
+            onChange={(e) => handleFilterChange('status', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Status</MenuItem>
+            <MenuItem value="UNPAID">Unpaid</MenuItem>
+            <MenuItem value="PAID">Paid</MenuItem>
+          </Select>
+        </FormControl>
+        
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Loaner</InputLabel>
+          <Select
+            value={filters.loanerId}
+            label="Loaner"
+            onChange={(e) => handleFilterChange('loanerId', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Loaners</MenuItem>
+            {filterOptions.loanerIds.map((id) => (
+              <MenuItem key={id} value={id}>{id}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Name</InputLabel>
+          <Select
+            value={filters.name}
+            label="Name"
+            onChange={(e) => handleFilterChange('name', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Names</MenuItem>
+            {filterOptions.names.map((name) => (
+              <MenuItem key={name} value={name}>{name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Reason</InputLabel>
+          <Select
+            value={filters.reason}
+            label="Reason"
+            onChange={(e) => handleFilterChange('reason', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Reasons</MenuItem>
+            {filterOptions.reasons.map((reason) => (
+              <MenuItem key={reason} value={reason}>{reason}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <DatePicker
+          label="Start Date"
+          value={filters.startDate ? parseISO(filters.startDate) : null}
+          onChange={(date) => handleFilterChange('startDate', date ? format(date, 'yyyy-MM-dd') : '')}
+          slotProps={{ 
+            textField: { 
+              fullWidth: true, 
+              size: 'small',
+              sx: datePickerStyle
+            } 
+          }}
+        />
+
+        <DatePicker
+          label="End Date"
+          value={filters.endDate ? parseISO(filters.endDate) : null}
+          onChange={(date) => handleFilterChange('endDate', date ? format(date, 'yyyy-MM-dd') : '')}
+          slotProps={{ 
+            textField: { 
+              fullWidth: true, 
+              size: 'small',
+              sx: datePickerStyle
+            } 
+          }}
+        />
+
+        <TextField
+          fullWidth
+          size="small"
+          label="Min Amount"
+          type="number"
+          value={filters.minAmount}
+          onChange={(e) => handleFilterChange('minAmount', e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <AttachMoney sx={{ 
+                color: theme === 'dark' ? '#a8b2d1' : '#666666',
+                mr: 1 
+              }} />
+            ),
+          }}
+          sx={textFieldStyle}
+        />
+
+        <TextField
+          fullWidth
+          size="small"
+          label="Max Amount"
+          type="number"
+          value={filters.maxAmount}
+          onChange={(e) => handleFilterChange('maxAmount', e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <AttachMoney sx={{ 
+                color: theme === 'dark' ? '#a8b2d1' : '#666666',
+                mr: 1 
+              }} />
+            ),
+          }}
+          sx={textFieldStyle}
+        />
+
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Per Page</InputLabel>
+          <Select
+            value={filters.limit}
+            label="Per Page"
+            onChange={(e) => handleFilterChange('limit', Number(e.target.value))}
+            sx={selectStyle}
+          >
+            <MenuItem value={10}>10</MenuItem>
+            <MenuItem value={25}>25</MenuItem>
+            <MenuItem value={50}>50</MenuItem>
+            <MenuItem value={100}>100</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+    );
+
+    if (isMobile) {
+      return (
+        <Collapse in={showFilters}>
+          {filterContent}
+        </Collapse>
+      );
+    }
+
+    return filterContent;
+  }, [filters, filterOptions, theme, textFieldStyle, selectStyle, labelStyle, datePickerStyle, isMobile, showFilters, handleFilterChange]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -769,7 +967,7 @@ const LoansPage = () => {
             </Box>
           </motion.div>
 
-          {/* Filter and Action Section - ADD LOAN BUTTON MOVED HERE */}
+          {/* Filter and Action Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -808,6 +1006,26 @@ const LoansPage = () => {
                     gap: 2,
                     flexDirection: { xs: 'column', sm: 'row' }
                   }}>
+                    {/* Mobile Filter Toggle Button */}
+                    {isMobile && (
+                      <Button
+                        variant="outlined"
+                        startIcon={showFilters ? <Close /> : <FilterList />}
+                        onClick={() => setShowFilters(!showFilters)}
+                        sx={{ 
+                          borderRadius: 1,
+                          borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+                          color: theme === 'dark' ? '#00ffff' : '#007bff',
+                          '&:hover': {
+                            borderColor: theme === 'dark' ? '#00b3b3' : '#0056b3',
+                            backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                          }
+                        }}
+                      >
+                        {showFilters ? 'Hide Filters' : 'Show Filters'}
+                      </Button>
+                    )}
+                    
                     <Button
                       variant="outlined"
                       startIcon={<Refresh />}
@@ -846,254 +1064,80 @@ const LoansPage = () => {
                 </Box>
                 
                 {/* Filter Controls */}
-                <Box sx={{ 
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    sm: 'repeat(2, 1fr)',
-                    md: 'repeat(4, 1fr)'
-                  },
-                  gap: 3
-                }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Search Loans"
-                    value={filters.search}
-                    onChange={(e) => handleFilterChange('search', e.target.value)}
-                    placeholder="Loan ID, name, reason..."
-                    InputProps={{
-                      startAdornment: (
-                        <Search sx={{ 
-                          color: theme === 'dark' ? '#a8b2d1' : '#666666',
-                          mr: 1 
-                        }} />
-                      ),
-                    }}
-                    sx={textFieldStyle}
-                  />
-                  
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Loan Type</InputLabel>
-                    <Select
-                      value={filters.loanType}
-                      label="Loan Type"
-                      onChange={(e) => handleFilterChange('loanType', e.target.value)}
-                      sx={selectStyle}
-                    >
-                      <MenuItem value="">All Types</MenuItem>
-                      <MenuItem value="TAKEN">Taken</MenuItem>
-                      <MenuItem value="GIVEN">Given</MenuItem>
-                    </Select>
-                  </FormControl>
-                  
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Status</InputLabel>
-                    <Select
-                      value={filters.status}
-                      label="Status"
-                      onChange={(e) => handleFilterChange('status', e.target.value)}
-                      sx={selectStyle}
-                    >
-                      <MenuItem value="">All Status</MenuItem>
-                      <MenuItem value="UNPAID">Unpaid</MenuItem>
-                      <MenuItem value="PAID">Paid</MenuItem>
-                    </Select>
-                  </FormControl>
-                  
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Loaner</InputLabel>
-                    <Select
-                      value={filters.loanerId}
-                      label="Loaner"
-                      onChange={(e) => handleFilterChange('loanerId', e.target.value)}
-                      sx={selectStyle}
-                    >
-                      <MenuItem value="">All Loaners</MenuItem>
-                      {filterOptions.loanerIds.map((id) => (
-                        <MenuItem key={id} value={id}>{id}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Name</InputLabel>
-                    <Select
-                      value={filters.name}
-                      label="Name"
-                      onChange={(e) => handleFilterChange('name', e.target.value)}
-                      sx={selectStyle}
-                    >
-                      <MenuItem value="">All Names</MenuItem>
-                      {filterOptions.names.map((name) => (
-                        <MenuItem key={name} value={name}>{name}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Reason</InputLabel>
-                    <Select
-                      value={filters.reason}
-                      label="Reason"
-                      onChange={(e) => handleFilterChange('reason', e.target.value)}
-                      sx={selectStyle}
-                    >
-                      <MenuItem value="">All Reasons</MenuItem>
-                      {filterOptions.reasons.map((reason) => (
-                        <MenuItem key={reason} value={reason}>{reason}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  <DatePicker
-                    label="Start Date"
-                    value={filters.startDate ? parseISO(filters.startDate) : null}
-                    onChange={(date) => handleFilterChange('startDate', date ? format(date, 'yyyy-MM-dd') : '')}
-                    slotProps={{ 
-                      textField: { 
-                        fullWidth: true, 
-                        size: 'small',
-                        sx: datePickerStyle
-                      } 
-                    }}
-                  />
-
-                  <DatePicker
-                    label="End Date"
-                    value={filters.endDate ? parseISO(filters.endDate) : null}
-                    onChange={(date) => handleFilterChange('endDate', date ? format(date, 'yyyy-MM-dd') : '')}
-                    slotProps={{ 
-                      textField: { 
-                        fullWidth: true, 
-                        size: 'small',
-                        sx: datePickerStyle
-                      } 
-                    }}
-                  />
-
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Min Amount"
-                    type="number"
-                    value={filters.minAmount}
-                    onChange={(e) => handleFilterChange('minAmount', e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <AttachMoney sx={{ 
-                          color: theme === 'dark' ? '#a8b2d1' : '#666666',
-                          mr: 1 
-                        }} />
-                      ),
-                    }}
-                    sx={textFieldStyle}
-                  />
-
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Max Amount"
-                    type="number"
-                    value={filters.maxAmount}
-                    onChange={(e) => handleFilterChange('maxAmount', e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <AttachMoney sx={{ 
-                          color: theme === 'dark' ? '#a8b2d1' : '#666666',
-                          mr: 1 
-                        }} />
-                      ),
-                    }}
-                    sx={textFieldStyle}
-                  />
-
-                  <FormControl fullWidth size="small">
-                    <InputLabel sx={labelStyle}>Per Page</InputLabel>
-                    <Select
-                      value={filters.limit}
-                      label="Per Page"
-                      onChange={(e) => handleFilterChange('limit', Number(e.target.value))}
-                      sx={selectStyle}
-                    >
-                      <MenuItem value={10}>10</MenuItem>
-                      <MenuItem value={25}>25</MenuItem>
-                      <MenuItem value={50}>50</MenuItem>
-                      <MenuItem value={100}>100</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Box>
+                {renderFilterControls()}
 
                 {/* Quick Date Filters */}
-                <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      handleFilterChange('startDate', format(thisMonthStart, 'yyyy-MM-dd'));
-                      handleFilterChange('endDate', format(thisMonthEnd, 'yyyy-MM-dd'));
-                    }}
-                    sx={{ 
-                      borderRadius: 1,
-                      fontSize: '0.75rem'
-                    }}
-                  >
-                    This Month
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      handleFilterChange('startDate', format(lastMonthStart, 'yyyy-MM-dd'));
-                      handleFilterChange('endDate', format(lastMonthEnd, 'yyyy-MM-dd'));
-                    }}
-                    sx={{ 
-                      borderRadius: 1,
-                      fontSize: '0.75rem'
-                    }}
-                  >
-                    Last Month
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      handleFilterChange('status', 'UNPAID');
-                    }}
-                    sx={{ 
-                      borderRadius: 1,
-                      fontSize: '0.75rem'
-                    }}
-                  >
-                    Show Unpaid Only
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      handleFilterChange('loanType', 'TAKEN');
-                    }}
-                    sx={{ 
-                      borderRadius: 1,
-                      fontSize: '0.75rem'
-                    }}
-                  >
-                    Show Taken Only
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      handleFilterChange('loanType', 'GIVEN');
-                    }}
-                    sx={{ 
-                      borderRadius: 1,
-                      fontSize: '0.75rem'
-                    }}
-                  >
-                    Show Given Only
-                  </Button>
-                </Box>
+                <Collapse in={!isMobile || showFilters}>
+                  <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        handleFilterChange('startDate', format(thisMonthStart, 'yyyy-MM-dd'));
+                        handleFilterChange('endDate', format(thisMonthEnd, 'yyyy-MM-dd'));
+                      }}
+                      sx={{ 
+                        borderRadius: 1,
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      This Month
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        handleFilterChange('startDate', format(lastMonthStart, 'yyyy-MM-dd'));
+                        handleFilterChange('endDate', format(lastMonthEnd, 'yyyy-MM-dd'));
+                      }}
+                      sx={{ 
+                        borderRadius: 1,
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      Last Month
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        handleFilterChange('status', 'UNPAID');
+                      }}
+                      sx={{ 
+                        borderRadius: 1,
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      Show Unpaid Only
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        handleFilterChange('loanType', 'TAKEN');
+                      }}
+                      sx={{ 
+                        borderRadius: 1,
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      Show Taken Only
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        handleFilterChange('loanType', 'GIVEN');
+                      }}
+                      sx={{ 
+                        borderRadius: 1,
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      Show Given Only
+                    </Button>
+                  </Box>
+                </Collapse>
               </CardContent>
             </Card>
           </motion.div>
@@ -1701,7 +1745,7 @@ const LoansPage = () => {
             </motion.div>
           )}
 
-          {/* Add/Edit Loan Dialog - FIXED to prevent header overlap */}
+          {/* Add/Edit Loan Dialog */}
           <Dialog 
             open={openDialog} 
             onClose={() => setOpenDialog(false)} 
@@ -1733,9 +1777,6 @@ const LoansPage = () => {
               </Typography>
             </DialogTitle>
             <DialogContent sx={{ p: 3, overflowY: 'auto' }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold', color: theme === 'dark' ? '#ccd6f6' : '#333333' }}>
-                {isEditMode ? 'Fill' : 'Fill'}
-              </Typography>
               <Stack spacing={3}>
                 <TextField
                   fullWidth
@@ -1867,7 +1908,7 @@ const LoansPage = () => {
               <Button 
                 onClick={isEditMode ? handleUpdateLoan : handleCreateLoan}
                 variant="contained"
-                disabled={!formData.loanerId || !formData.name || !formData.amount || !formData.reason || !formData.loanType}
+                disabled={!formData.loanerId || !formData.name || !formData.amount || !formData.loanType}
                 sx={{
                   background: theme === 'dark'
                     ? 'linear-gradient(135deg, #00ffff, #00b3b3)'

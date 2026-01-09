@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Box, Typography, Card, CardContent,
   TextField, Table, TableBody, TableCell,
@@ -13,7 +13,7 @@ import {
   FormControlLabel, Autocomplete, Divider,
   Paper, Stack, ToggleButton, ToggleButtonGroup,
   LinearProgress, Badge, Tooltip,
-  Popover
+  Popover, Collapse, Grid
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/lib/theme-context';
@@ -51,7 +51,8 @@ import {
   ZoomOut,
   Timeline as TimelineIcon,
   MultilineChart,
-  StackedLineChart
+  StackedLineChart,
+  Close
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -73,9 +74,16 @@ import {
   addYears,
   subYears,
   getWeek,
+  getWeekOfMonth,
   startOfYear,
   endOfYear,
-  eachMonthOfInterval
+  eachMonthOfInterval,
+  differenceInDays,
+  isSameMonth,
+  isSameYear,
+  parseISO,
+  eachWeekOfInterval,
+  eachMonthOfInterval as eachMonthOfIntervalFn
 } from 'date-fns';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from 'recharts';
 import html2canvas from 'html2canvas';
@@ -297,10 +305,13 @@ const WalletPage = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'stats'>('list');
   
-  // Chart navigation states
-  const [dailyPeriod, setDailyPeriod] = useState(new Date());
-  const [weeklyPeriod, setWeeklyPeriod] = useState(new Date());
-  const [monthlyPeriod, setMonthlyPeriod] = useState(new Date());
+  // Chart navigation states - FIXED: Use proper initial values
+  const [dailyPeriod, setDailyPeriod] = useState<Date>(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [weeklyPeriod, setWeeklyPeriod] = useState<Date>(() => startOfMonth(new Date()));
+  const [monthlyPeriod, setMonthlyPeriod] = useState<Date>(() => new Date(new Date().getFullYear(), 0, 1));
+  
+  // Mobile filter state
+  const [showFilters, setShowFilters] = useState(false);
   
   // Tooltip state
   const [tooltip, setTooltip] = useState<{
@@ -313,22 +324,26 @@ const WalletPage = () => {
     data: null
   });
 
-  // Form state
+  // Form state - FIXED: Use useMemo for stable references
   const [formData, setFormData] = useState<WalletFormData>({
     date: new Date(),
     type: 'EXPENSE',
     category: '',
     source: '',
     amount: '',
-    description: '',
+    description: 'add reason',
     status: 'CONFIRMED'
   });
+
+  // Refs for form fields
+  const amountRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLInputElement>(null);
 
   // Ref for PDF export
   const transactionsRef = useRef<HTMLDivElement>(null);
 
   // Theme styles
-  const themeStyles = {
+  const themeStyles = useMemo(() => ({
     background: theme === 'dark' 
       ? 'linear-gradient(135deg, #0a192f, #112240)' 
       : 'linear-gradient(135deg, #f0f0f0, #ffffff)',
@@ -347,17 +362,17 @@ const WalletPage = () => {
     balanceColor: theme === 'dark' ? '#00ffff' : '#17a2b8',
     chartGrid: theme === 'dark' ? '#334155' : '#e5e7eb',
     chartText: theme === 'dark' ? '#a8b2d1' : '#666666'
-  };
+  }), [theme]);
 
   // MUI styles
-  const labelStyle = {
+  const labelStyle = useMemo(() => ({
     color: theme === 'dark' ? '#a8b2d1' : '#666666',
     '&.Mui-focused': {
       color: theme === 'dark' ? '#00ffff' : '#007bff',
     }
-  };
+  }), [theme]);
 
-  const selectStyle = {
+  const selectStyle = useMemo(() => ({
     borderRadius: 1,
     backgroundColor: theme === 'dark' ? '#1e293b' : 'white',
     color: theme === 'dark' ? '#ccd6f6' : '#333333',
@@ -370,9 +385,9 @@ const WalletPage = () => {
     '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
       borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
     }
-  };
+  }), [theme]);
 
-  const textFieldStyle = {
+  const textFieldStyle = useMemo(() => ({
     '& .MuiOutlinedInput-root': {
       backgroundColor: theme === 'dark' ? '#1e293b' : 'white',
       color: theme === 'dark' ? '#ccd6f6' : '#333333',
@@ -395,9 +410,9 @@ const WalletPage = () => {
     '& .MuiFormHelperText-root': {
       color: theme === 'dark' ? '#ff6b6b' : '#dc3545',
     }
-  };
+  }), [theme]);
 
-  const datePickerStyle = {
+  const datePickerStyle = useMemo(() => ({
     '& .MuiOutlinedInput-root': {
       backgroundColor: theme === 'dark' ? '#1e293b' : 'white',
       color: theme === 'dark' ? '#ccd6f6' : '#333333',
@@ -417,10 +432,10 @@ const WalletPage = () => {
     '& .MuiInputLabel-root.Mui-focused': {
       color: theme === 'dark' ? '#00ffff' : '#007bff',
     }
-  };
+  }), [theme]);
 
   // Summary cards
-  const summaryCards = [
+  const summaryCards = useMemo(() => [
     {
       title: 'Total Balance',
       value: `$${summary.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
@@ -453,10 +468,10 @@ const WalletPage = () => {
       change: '+15.7%',
       trend: 'up'
     }
-  ];
+  ], [summary, themeStyles, theme]);
 
   // Custom Tooltip for Recharts
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = useCallback(({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
         <Card sx={{ 
@@ -504,10 +519,10 @@ const WalletPage = () => {
       );
     }
     return null;
-  };
+  }, [theme]);
 
   // Helper components
-  const FormRow = ({ children, columns = 1, spacing = 2 }: { 
+  const FormRow = useCallback(({ children, columns = 1, spacing = 2 }: { 
     children: React.ReactNode; 
     columns?: 1 | 2 | 3 | 4;
     spacing?: number;
@@ -527,9 +542,9 @@ const WalletPage = () => {
         {children}
       </Box>
     );
-  };
+  }, []);
 
-  const renderFormSection = (title: string, icon: React.ReactNode, content: React.ReactNode) => (
+  const renderFormSection = useCallback((title: string, icon: React.ReactNode, content: React.ReactNode) => (
     <>
       <Typography variant="h6" sx={{ 
         color: theme === 'dark' ? '#00ffff' : '#007bff', 
@@ -543,8 +558,9 @@ const WalletPage = () => {
       {content}
       <Divider sx={{ my: 3 }} />
     </>
-  );
+  ), [theme]);
 
+  // Fetch data
   useEffect(() => {
     fetchTransactions();
     fetchFilterOptions();
@@ -559,7 +575,7 @@ const WalletPage = () => {
     }
   }, [dailyPeriod, weeklyPeriod, monthlyPeriod]);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -603,22 +619,31 @@ const WalletPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
-  const fetchAllStatistics = async () => {
+  const fetchAllStatistics = useCallback(async () => {
     try {
       setLoadingStats(true);
       
-      // Fetch daily statistics
-      const dailyResponse = await api.get(`/wallet/stats/daily?year=${dailyPeriod.getFullYear()}&month=${dailyPeriod.getMonth() + 1}&week=${getWeek(dailyPeriod)}`);
+      // Fetch daily statistics for current week
+      const weekStart = dailyPeriod;
+      const weekEnd = endOfWeek(dailyPeriod, { weekStartsOn: 1 });
+      const weekNumber = getWeek(dailyPeriod, { weekStartsOn: 1 });
+      const year = dailyPeriod.getFullYear();
+      const month = dailyPeriod.getMonth() + 1;
+      
+      const dailyResponse = await api.get(`/wallet/stats/daily?year=${year}&month=${month}&week=${weekNumber}`);
       setDailyStats(dailyResponse.data.data);
       
-      // Fetch weekly statistics
-      const weeklyResponse = await api.get(`/wallet/stats/weekly?year=${weeklyPeriod.getFullYear()}&month=${weeklyPeriod.getMonth() + 1}`);
+      // Fetch weekly statistics for current month
+      const weeklyYear = weeklyPeriod.getFullYear();
+      const weeklyMonth = weeklyPeriod.getMonth() + 1;
+      const weeklyResponse = await api.get(`/wallet/stats/weekly?year=${weeklyYear}&month=${weeklyMonth}`);
       setWeeklyStats(weeklyResponse.data.data);
       
-      // Fetch monthly statistics
-      const monthlyResponse = await api.get(`/wallet/stats/monthly?year=${monthlyPeriod.getFullYear()}`);
+      // Fetch monthly statistics for current year
+      const monthlyYear = monthlyPeriod.getFullYear();
+      const monthlyResponse = await api.get(`/wallet/stats/monthly?year=${monthlyYear}`);
       setMonthlyStats(monthlyResponse.data.data);
       
       // Fetch category and source statistics
@@ -636,18 +661,18 @@ const WalletPage = () => {
     } finally {
       setLoadingStats(false);
     }
-  };
+  }, [dailyPeriod, weeklyPeriod, monthlyPeriod]);
 
-  const fetchFilterOptions = async () => {
+  const fetchFilterOptions = useCallback(async () => {
     try {
       const response = await api.get('/wallet/filter-options');
       setFilterOptions(response.data.data);
     } catch (error: any) {
       console.error('Failed to fetch filter options:', error);
     }
-  };
+  }, []);
 
-  const handleCreateTransaction = async () => {
+  const handleCreateTransaction = useCallback(async () => {
     try {
       if (!formData.category || !formData.source || !formData.amount) {
         setError('Category, source, and amount are required');
@@ -677,9 +702,9 @@ const WalletPage = () => {
     } catch (error: any) {
       setError(error.response?.data?.message || 'Failed to create transaction');
     }
-  };
+  }, [formData, fetchTransactions, fetchAllStatistics, viewMode]);
 
-  const handleUpdateTransaction = async () => {
+  const handleUpdateTransaction = useCallback(async () => {
     if (!selectedTransaction) return;
 
     try {
@@ -711,9 +736,9 @@ const WalletPage = () => {
     } catch (error: any) {
       setError(error.response?.data?.message || 'Failed to update transaction');
     }
-  };
+  }, [formData, selectedTransaction, fetchTransactions, fetchAllStatistics, viewMode]);
 
-  const handleStatusUpdate = async (transactionId: string, status: string) => {
+  const handleStatusUpdate = useCallback(async (transactionId: string, status: string) => {
     try {
       await api.patch(`/wallet/${transactionId}/status`, { status });
       setSuccess(`Transaction status updated to ${status}`);
@@ -724,9 +749,9 @@ const WalletPage = () => {
     } catch (error: any) {
       setError('Failed to update transaction status');
     }
-  };
+  }, [fetchTransactions, fetchAllStatistics, viewMode]);
 
-  const handleDeleteTransaction = async () => {
+  const handleDeleteTransaction = useCallback(async () => {
     if (!selectedTransaction) return;
 
     try {
@@ -741,9 +766,9 @@ const WalletPage = () => {
     } catch (error: any) {
       setError('Failed to delete transaction');
     }
-  };
+  }, [selectedTransaction, fetchTransactions, fetchAllStatistics, viewMode]);
 
-  const handleOpenEditDialog = (transaction: WalletTransaction) => {
+  const handleOpenEditDialog = useCallback((transaction: WalletTransaction) => {
     setSelectedTransaction(transaction);
     setIsEditMode(true);
     setFormData({
@@ -756,36 +781,51 @@ const WalletPage = () => {
       status: transaction.status
     });
     setOpenDialog(true);
-  };
+    
+    // Focus on amount field when dialog opens
+    setTimeout(() => {
+      if (amountRef.current) {
+        amountRef.current.focus();
+        amountRef.current.select();
+      }
+    }, 100);
+  }, []);
 
-  const handleOpenViewDialog = (transaction: WalletTransaction) => {
+  const handleOpenViewDialog = useCallback((transaction: WalletTransaction) => {
     setSelectedTransaction(transaction);
     setOpenViewDialog(true);
-  };
+  }, []);
 
-  const handleOpenCreateDialog = () => {
+  const handleOpenCreateDialog = useCallback(() => {
     setIsEditMode(false);
     resetForm();
     setOpenDialog(true);
-  };
+    
+    // Focus on amount field when dialog opens
+    setTimeout(() => {
+      if (amountRef.current) {
+        amountRef.current.focus();
+      }
+    }, 100);
+  }, []);
 
-  const handleFilterChange = (field: string, value: string | number | Date | null) => {
+  const handleFilterChange = useCallback((field: string, value: string | number | Date | null) => {
     setFilters(prev => ({
       ...prev,
       [field]: value,
       ...(field !== 'page' && { page: 1 })
     }));
-  };
+  }, []);
 
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+  const handlePageChange = useCallback((event: React.ChangeEvent<unknown>, value: number) => {
     handleFilterChange('page', value);
-  };
+  }, [handleFilterChange]);
 
-  const handleFormChange = (field: keyof WalletFormData, value: any) => {
+  const handleFormChange = useCallback((field: keyof WalletFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       date: new Date(),
       type: 'EXPENSE',
@@ -795,9 +835,9 @@ const WalletPage = () => {
       description: '',
       status: 'CONFIRMED'
     });
-  };
+  }, []);
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setFilters({
       search: '',
       type: '',
@@ -811,83 +851,85 @@ const WalletPage = () => {
       page: 1,
       limit: 10
     });
-  };
+    setShowFilters(false);
+  }, []);
 
-  // Chart navigation handlers
-  const handleDailyPrev = () => {
-    setDailyPeriod(subWeeks(dailyPeriod, 1));
-  };
+  // Chart navigation handlers - FIXED: Proper week/month/year navigation
+  const handleDailyPrev = useCallback(() => {
+    setDailyPeriod(prev => subWeeks(prev, 1));
+  }, []);
 
-  const handleDailyNext = () => {
-    setDailyPeriod(addWeeks(dailyPeriod, 1));
-  };
+  const handleDailyNext = useCallback(() => {
+    setDailyPeriod(prev => addWeeks(prev, 1));
+  }, []);
 
-  const handleWeeklyPrev = () => {
-    setWeeklyPeriod(subMonths(weeklyPeriod, 1));
-  };
+  const handleWeeklyPrev = useCallback(() => {
+    setWeeklyPeriod(prev => subMonths(prev, 1));
+  }, []);
 
-  const handleWeeklyNext = () => {
-    setWeeklyPeriod(addMonths(weeklyPeriod, 1));
-  };
+  const handleWeeklyNext = useCallback(() => {
+    setWeeklyPeriod(prev => addMonths(prev, 1));
+  }, []);
 
-  const handleMonthlyPrev = () => {
-    setMonthlyPeriod(subYears(monthlyPeriod, 1));
-  };
+  const handleMonthlyPrev = useCallback(() => {
+    setMonthlyPeriod(prev => subYears(prev, 1));
+  }, []);
 
-  const handleMonthlyNext = () => {
-    setMonthlyPeriod(addYears(monthlyPeriod, 1));
-  };
+  const handleMonthlyNext = useCallback(() => {
+    setMonthlyPeriod(prev => addYears(prev, 1));
+  }, []);
 
-  const formatDate = (dateString: string | Date) => {
+  const formatDate = useCallback((dateString: string | Date) => {
     return format(new Date(dateString), 'MMMM dd, yyyy');
-  };
+  }, []);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(amount);
-  };
+  }, []);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = useCallback((status: string) => {
     switch (status) {
       case 'CONFIRMED': return <CheckCircle fontSize="small" />;
       case 'PENDING': return <Pending fontSize="small" />;
       case 'CANCELLED': return <Cancel fontSize="small" />;
       default: return <CheckCircle fontSize="small" />;
     }
-  };
+  }, []);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     switch (status) {
       case 'CONFIRMED': return 'success';
       case 'PENDING': return 'warning';
       case 'CANCELLED': return 'error';
       default: return 'default';
     }
-  };
+  }, []);
 
-  const getTypeIcon = (type: string) => {
+  const getTypeIcon = useCallback((type: string) => {
     return type === 'INCOME' ? 
       <ArrowUpward sx={{ color: themeStyles.incomeColor }} /> : 
       <ArrowDownward sx={{ color: themeStyles.expenseColor }} />;
-  };
+  }, [themeStyles]);
 
-  const getCategoryIcon = (category: string) => {
+  const getCategoryIcon = useCallback((category: string) => {
     const allCategories = [...expenseCategories, ...incomeCategories];
     const cat = allCategories.find(c => c.value === category);
     return cat ? cat.icon : <Category />;
-  };
+  }, []);
 
-  const getCategoryLabel = (category: string) => {
+  const getCategoryLabel = useCallback((category: string) => {
     const allCategories = [...expenseCategories, ...incomeCategories];
     const cat = allCategories.find(c => c.value === category);
     return cat ? cat.label : category;
-  };
+  }, []);
 
-  const exportToCSV = async () => {
+  // FIXED: Export functions
+  const exportToCSV = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       
@@ -899,7 +941,6 @@ const WalletPage = () => {
 
       const response = await api.get(`/wallet/export?${params}`);
       
-      // Create CSV content
       const csvContent = [
         ['Date', 'Type', 'Category', 'Source', 'Amount', 'Description', 'Status', 'Created By', 'Created At'],
         ...response.data.data.transactions.map((t: any) => [
@@ -915,7 +956,6 @@ const WalletPage = () => {
         ])
       ].map(row => row.join(',')).join('\n');
 
-      // Create and download file
       const blob = new Blob([csvContent], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -930,13 +970,12 @@ const WalletPage = () => {
     } catch (error: any) {
       setError('Failed to export transactions to CSV');
     }
-  };
+  }, [filters]);
 
-  const exportToPDF = async () => {
+  const exportToPDF = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Get data for PDF
       const params = new URLSearchParams();
       
       Object.entries(filters).forEach(([key, value]) => {
@@ -948,21 +987,17 @@ const WalletPage = () => {
       const response = await api.get(`/wallet/export/pdf?${params}`);
       const transactions = response.data.data.transactions;
 
-      // Create PDF
       const pdf = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
-      // Add title
       pdf.setFontSize(20);
       pdf.setTextColor(50);
       pdf.text('Wallet Transactions Report', pageWidth / 2, 20, { align: 'center' });
 
-      // Add date
       pdf.setFontSize(12);
       pdf.text(`Generated on: ${format(new Date(), 'MMMM dd, yyyy')}`, pageWidth / 2, 30, { align: 'center' });
 
-      // Add summary
       pdf.setFontSize(14);
       pdf.text('Summary', 20, 45);
       
@@ -976,7 +1011,6 @@ const WalletPage = () => {
       yPos += 8;
       pdf.text(`Total Transactions: ${summary.totalTransactions}`, 20, yPos);
 
-      // Add table headers
       yPos = 85;
       const headers = ['Date', 'Type', 'Category', 'Source', 'Amount', 'Status'];
       const columnWidths = [30, 25, 40, 40, 25, 25];
@@ -990,14 +1024,12 @@ const WalletPage = () => {
         xPos += columnWidths[i];
       });
 
-      // Add transaction rows
       yPos += 10;
       transactions.forEach((transaction: any, index: number) => {
         if (yPos > pageHeight - 20) {
           pdf.addPage();
           yPos = 20;
           
-          // Add headers on new page
           xPos = 20;
           pdf.setFillColor(240, 240, 240);
           pdf.rect(20, yPos - 5, pageWidth - 40, 8, 'F');
@@ -1027,7 +1059,6 @@ const WalletPage = () => {
         yPos += 8;
       });
 
-      // Save PDF
       pdf.save(`wallet-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
       
       setSuccess('Transactions exported to PDF successfully');
@@ -1037,11 +1068,15 @@ const WalletPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, summary]);
 
-  // Chart components - Updated to use LineChart for all
-  const renderDailyChart = () => {
+  // FIXED: Render daily chart with proper week handling
+  const renderDailyChart = useCallback(() => {
     if (!dailyStats) return null;
+
+    const weekStart = startOfWeek(dailyPeriod, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(dailyPeriod, { weekStartsOn: 1 });
+    const weekNumber = getWeek(dailyPeriod, { weekStartsOn: 1 });
 
     const chartData = dailyStats.days.map(day => ({
       ...day,
@@ -1063,7 +1098,9 @@ const WalletPage = () => {
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center',
-            mb: 3
+            mb: 3,
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2
           }}>
             <Typography variant="h6" sx={{ 
               fontWeight: 'bold',
@@ -1072,7 +1109,7 @@ const WalletPage = () => {
               alignItems: 'center',
               gap: 1
             }}>
-              <Today /> Daily Overview
+              <Today /> Daily Overview - Week {weekNumber}
             </Typography>
             
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1091,10 +1128,10 @@ const WalletPage = () => {
               
               <Typography variant="body2" sx={{ 
                 color: theme === 'dark' ? '#a8b2d1' : '#666666',
-                minWidth: 150,
+                minWidth: 200,
                 textAlign: 'center'
               }}>
-                {format(new Date(dailyStats.period.startDate), 'MMM dd')} - {format(new Date(dailyStats.period.endDate), 'MMM dd, yyyy')}
+                {format(weekStart, 'MMM dd')} - {format(weekEnd, 'MMM dd, yyyy')}
               </Typography>
               
               <IconButton 
@@ -1130,7 +1167,7 @@ const WalletPage = () => {
                 <YAxis 
                   stroke={themeStyles.chartText}
                   tick={{ fill: themeStyles.chartText }}
-                  tickFormatter={(value) => `$${value}`}
+                  tickFormatter={(value) => `$${value.toFixed(0)}`}
                 />
                 <RechartsTooltip 
                   content={<CustomTooltip />}
@@ -1175,9 +1212,11 @@ const WalletPage = () => {
             justifyContent: 'space-between', 
             mt: 2,
             pt: 2,
-            borderTop: `1px solid ${themeStyles.chartGrid}`
+            borderTop: `1px solid ${themeStyles.chartGrid}`,
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2
           }}>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Total Income
               </Typography>
@@ -1185,10 +1224,10 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.incomeColor
               }}>
-                {formatCurrency(dailyStats.summary.totalIncome)}
+                {formatCurrency(dailyStats?.summary?.totalIncome || 0)}
               </Typography>
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Total Expense
               </Typography>
@@ -1196,10 +1235,10 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.expenseColor
               }}>
-                {formatCurrency(dailyStats.summary.totalExpense)}
+                {formatCurrency(dailyStats?.summary?.totalExpense || 0)}
               </Typography>
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Net Balance
               </Typography>
@@ -1207,17 +1246,21 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.balanceColor
               }}>
-                {formatCurrency(dailyStats.summary.balance)}
+                {formatCurrency(dailyStats?.summary?.balance || 0)}
               </Typography>
             </Box>
           </Box>
         </CardContent>
       </Card>
     );
-  };
+  }, [dailyStats, dailyPeriod, theme, themeStyles, handleDailyPrev, handleDailyNext, CustomTooltip, formatCurrency]);
 
-  const renderWeeklyChart = () => {
+  const renderWeeklyChart = useCallback(() => {
     if (!weeklyStats) return null;
+
+    const monthStart = startOfMonth(weeklyPeriod);
+    const monthEnd = endOfMonth(weeklyPeriod);
+    const monthName = format(monthStart, 'MMMM yyyy');
 
     const chartData = weeklyStats.weeks.map(week => ({
       ...week,
@@ -1239,7 +1282,9 @@ const WalletPage = () => {
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center',
-            mb: 3
+            mb: 3,
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2
           }}>
             <Typography variant="h6" sx={{ 
               fontWeight: 'bold',
@@ -1248,7 +1293,7 @@ const WalletPage = () => {
               alignItems: 'center',
               gap: 1
             }}>
-              <DateRangeIcon /> Weekly Overview
+              <DateRangeIcon /> Weekly Overview - {monthName}
             </Typography>
             
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1270,7 +1315,7 @@ const WalletPage = () => {
                 minWidth: 150,
                 textAlign: 'center'
               }}>
-                {format(new Date(weeklyPeriod), 'MMMM yyyy')}
+                {format(monthStart, 'MMM dd')} - {format(monthEnd, 'MMM dd, yyyy')}
               </Typography>
               
               <IconButton 
@@ -1306,7 +1351,7 @@ const WalletPage = () => {
                 <YAxis 
                   stroke={themeStyles.chartText}
                   tick={{ fill: themeStyles.chartText }}
-                  tickFormatter={(value) => `$${value}`}
+                  tickFormatter={(value) => `$${value.toFixed(0)}`}
                 />
                 <RechartsTooltip 
                   content={<CustomTooltip />}
@@ -1351,9 +1396,11 @@ const WalletPage = () => {
             justifyContent: 'space-between', 
             mt: 2,
             pt: 2,
-            borderTop: `1px solid ${themeStyles.chartGrid}`
+            borderTop: `1px solid ${themeStyles.chartGrid}`,
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2
           }}>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Total Income
               </Typography>
@@ -1361,10 +1408,10 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.incomeColor
               }}>
-                {formatCurrency(weeklyStats.summary.totalIncome)}
+                {formatCurrency(weeklyStats?.summary?.totalIncome || 0)}
               </Typography>
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Total Expense
               </Typography>
@@ -1372,10 +1419,10 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.expenseColor
               }}>
-                {formatCurrency(weeklyStats.summary.totalExpense)}
+                {formatCurrency(weeklyStats?.summary?.totalExpense || 0)}
               </Typography>
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Net Balance
               </Typography>
@@ -1383,21 +1430,22 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.balanceColor
               }}>
-                {formatCurrency(weeklyStats.summary.balance)}
+                {formatCurrency(weeklyStats?.summary?.balance || 0)}
               </Typography>
             </Box>
           </Box>
         </CardContent>
       </Card>
     );
-  };
+  }, [weeklyStats, weeklyPeriod, theme, themeStyles, handleWeeklyPrev, handleWeeklyNext, CustomTooltip, formatCurrency]);
 
-  const renderMonthlyChart = () => {
+  const renderMonthlyChart = useCallback(() => {
     if (!monthlyStats) return null;
 
+    const year = monthlyPeriod.getFullYear();
     const chartData = monthlyStats.months.map(month => ({
       ...month,
-      month: month.monthName
+      month: month.monthName.substring(0, 3)
     }));
 
     return (
@@ -1415,7 +1463,9 @@ const WalletPage = () => {
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center',
-            mb: 3
+            mb: 3,
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2
           }}>
             <Typography variant="h6" sx={{ 
               fontWeight: 'bold',
@@ -1424,7 +1474,7 @@ const WalletPage = () => {
               alignItems: 'center',
               gap: 1
             }}>
-              <CalendarToday /> Monthly Overview
+              <CalendarToday /> Monthly Overview - {year}
             </Typography>
             
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1446,7 +1496,7 @@ const WalletPage = () => {
                 minWidth: 100,
                 textAlign: 'center'
               }}>
-                {monthlyPeriod.getFullYear()}
+                {year}
               </Typography>
               
               <IconButton 
@@ -1482,7 +1532,7 @@ const WalletPage = () => {
                 <YAxis 
                   stroke={themeStyles.chartText}
                   tick={{ fill: themeStyles.chartText }}
-                  tickFormatter={(value) => `$${value}`}
+                  tickFormatter={(value) => `$${value.toFixed(0)}`}
                 />
                 <RechartsTooltip 
                   content={<CustomTooltip />}
@@ -1527,9 +1577,11 @@ const WalletPage = () => {
             justifyContent: 'space-between', 
             mt: 2,
             pt: 2,
-            borderTop: `1px solid ${themeStyles.chartGrid}`
+            borderTop: `1px solid ${themeStyles.chartGrid}`,
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2
           }}>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Total Income
               </Typography>
@@ -1537,10 +1589,10 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.incomeColor
               }}>
-                {formatCurrency(monthlyStats.summary.totalIncome)}
+                {formatCurrency(monthlyStats?.summary?.totalIncome || 0)}
               </Typography>
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Total Expense
               </Typography>
@@ -1548,10 +1600,10 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.expenseColor
               }}>
-                {formatCurrency(monthlyStats.summary.totalExpense)}
+                {formatCurrency(monthlyStats?.summary?.totalExpense || 0)}
               </Typography>
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color={themeStyles.chartText}>
                 Net Balance
               </Typography>
@@ -1559,16 +1611,16 @@ const WalletPage = () => {
                 fontWeight: 'bold',
                 color: themeStyles.balanceColor
               }}>
-                {formatCurrency(monthlyStats.summary.balance)}
+                {formatCurrency(monthlyStats?.summary?.balance || 0)}
               </Typography>
             </Box>
           </Box>
         </CardContent>
       </Card>
     );
-  };
+  }, [monthlyStats, monthlyPeriod, theme, themeStyles, handleMonthlyPrev, handleMonthlyNext, CustomTooltip, formatCurrency]);
 
-  const renderCategoryBreakdown = () => {
+  const renderCategoryBreakdown = useCallback(() => {
     if (!categoryStats.length) return null;
 
     return (
@@ -1633,9 +1685,9 @@ const WalletPage = () => {
         </CardContent>
       </Card>
     );
-  };
+  }, [categoryStats, theme, themeStyles, getCategoryIcon, getCategoryLabel, formatCurrency]);
 
-  const renderSourceAnalysis = () => {
+  const renderSourceAnalysis = useCallback(() => {
     if (!sourceStats.length) return null;
 
     return (
@@ -1687,10 +1739,10 @@ const WalletPage = () => {
         </CardContent>
       </Card>
     );
-  };
+  }, [sourceStats, theme, themeStyles, formatCurrency]);
 
   // Render statistics view
-  const renderStatisticsView = () => {
+  const renderStatisticsView = useCallback(() => {
     if (loadingStats) {
       return (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
@@ -1717,7 +1769,177 @@ const WalletPage = () => {
         {renderSourceAnalysis()}
       </Box>
     );
-  };
+  }, [loadingStats, theme, renderDailyChart, renderWeeklyChart, renderMonthlyChart, renderCategoryBreakdown, renderSourceAnalysis]);
+
+  // FIXED: Filter controls component for mobile/desktop
+  const renderFilterControls = useCallback(() => {
+    const filterContent = (
+      <Box sx={{ 
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: '1fr',
+          sm: 'repeat(2, 1fr)',
+          md: 'repeat(4, 1fr)'
+        },
+        gap: 3
+      }}>
+        <TextField
+          fullWidth
+          size="small"
+          label="Search"
+          value={filters.search}
+          onChange={(e) => handleFilterChange('search', e.target.value)}
+          placeholder="Search by source or description..."
+          InputProps={{
+            startAdornment: (
+              <Search sx={{ 
+                color: theme === 'dark' ? '#a8b2d1' : '#666666',
+                mr: 1 
+              }} />
+            ),
+          }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              borderRadius: 1,
+              backgroundColor: theme === 'dark' ? '#1e293b' : 'white',
+              color: theme === 'dark' ? '#ccd6f6' : '#333333',
+              '& fieldset': {
+                borderColor: theme === 'dark' ? '#334155' : '#e5e7eb',
+              },
+              '&:hover fieldset': {
+                borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+              },
+            },
+            '& .MuiInputLabel-root': {
+              color: theme === 'dark' ? '#a8b2d1' : '#666666',
+            },
+            '& .MuiInputLabel-root.Mui-focused': {
+              color: theme === 'dark' ? '#00ffff' : '#007bff',
+            }
+          }}
+        />
+        
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Type</InputLabel>
+          <Select
+            value={filters.type}
+            label="Type"
+            onChange={(e) => handleFilterChange('type', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Types</MenuItem>
+            <MenuItem value="INCOME">Income</MenuItem>
+            <MenuItem value="EXPENSE">Expense</MenuItem>
+          </Select>
+        </FormControl>
+        
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Category</InputLabel>
+          <Select
+            value={filters.category}
+            label="Category"
+            onChange={(e) => handleFilterChange('category', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Categories</MenuItem>
+            {filterOptions.categories.map((category) => (
+              <MenuItem key={category} value={category}>
+                {category}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Status</InputLabel>
+          <Select
+            value={filters.status}
+            label="Status"
+            onChange={(e) => handleFilterChange('status', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Status</MenuItem>
+            {filterOptions.statuses.map((status) => (
+              <MenuItem key={status} value={status}>
+                {status}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Source</InputLabel>
+          <Select
+            value={filters.source}
+            label="Source"
+            onChange={(e) => handleFilterChange('source', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="">All Sources</MenuItem>
+            {filterOptions.sources.map((source) => (
+              <MenuItem key={source} value={source}>
+                {source}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <DatePicker
+          label="Start Date"
+          value={filters.startDate ? new Date(filters.startDate) : null}
+          onChange={(date) => handleFilterChange('startDate', date ? format(date, 'yyyy-MM-dd') : '')}
+          slotProps={{ 
+            textField: { 
+              fullWidth: true, 
+              size: 'small',
+              sx: datePickerStyle
+            } 
+          }}
+        />
+
+        <DatePicker
+          label="End Date"
+          value={filters.endDate ? new Date(filters.endDate) : null}
+          onChange={(date) => handleFilterChange('endDate', date ? format(date, 'yyyy-MM-dd') : '')}
+          slotProps={{ 
+            textField: { 
+              fullWidth: true, 
+              size: 'small',
+              sx: datePickerStyle
+            } 
+          }}
+        />
+
+        <FormControl fullWidth size="small">
+          <InputLabel sx={labelStyle}>Sort By</InputLabel>
+          <Select
+            value={filters.sortBy}
+            label="Sort By"
+            onChange={(e) => handleFilterChange('sortBy', e.target.value)}
+            sx={selectStyle}
+          >
+            <MenuItem value="-date">Date (Newest First)</MenuItem>
+            <MenuItem value="date">Date (Oldest First)</MenuItem>
+            <MenuItem value="-amount">Amount (High to Low)</MenuItem>
+            <MenuItem value="amount">Amount (Low to High)</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+    );
+
+    if (isMobile) {
+      return (
+        <Collapse in={showFilters}>
+          {filterContent}
+        </Collapse>
+      );
+    }
+
+    return filterContent;
+  }, [filters, filterOptions, theme, labelStyle, selectStyle, datePickerStyle, isMobile, showFilters, handleFilterChange]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -1891,6 +2113,26 @@ const WalletPage = () => {
                     flexDirection: { xs: 'column', sm: 'row' },
                     flexWrap: 'wrap'
                   }}>
+                    {/* Mobile Filter Toggle Button */}
+                    {isMobile && viewMode === 'list' && (
+                      <Button
+                        variant="outlined"
+                        startIcon={showFilters ? <Close /> : <FilterList />}
+                        onClick={() => setShowFilters(!showFilters)}
+                        sx={{ 
+                          borderRadius: 1,
+                          borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
+                          color: theme === 'dark' ? '#00ffff' : '#007bff',
+                          '&:hover': {
+                            borderColor: theme === 'dark' ? '#00b3b3' : '#0056b3',
+                            backgroundColor: theme === 'dark' ? '#00ffff20' : '#007bff10'
+                          }
+                        }}
+                      >
+                        {showFilters ? 'Hide Filters' : 'Show Filters'}
+                      </Button>
+                    )}
+                    
                     <Button
                       variant="outlined"
                       startIcon={<Refresh />}
@@ -1976,162 +2218,7 @@ const WalletPage = () => {
                 </Box>
 
                 {/* Filter Controls (only show in list view) */}
-                {viewMode === 'list' && (
-                  <Box sx={{ 
-                    display: 'grid',
-                    gridTemplateColumns: {
-                      xs: '1fr',
-                      sm: 'repeat(2, 1fr)',
-                      md: 'repeat(4, 1fr)'
-                    },
-                    gap: 3
-                  }}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      label="Search"
-                      value={filters.search}
-                      onChange={(e) => handleFilterChange('search', e.target.value)}
-                      placeholder="Search by source or description..."
-                      InputProps={{
-                        startAdornment: (
-                          <Search sx={{ 
-                            color: theme === 'dark' ? '#a8b2d1' : '#666666',
-                            mr: 1 
-                          }} />
-                        ),
-                      }}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 1,
-                          backgroundColor: theme === 'dark' ? '#1e293b' : 'white',
-                          color: theme === 'dark' ? '#ccd6f6' : '#333333',
-                          '& fieldset': {
-                            borderColor: theme === 'dark' ? '#334155' : '#e5e7eb',
-                          },
-                          '&:hover fieldset': {
-                            borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: theme === 'dark' ? '#00ffff' : '#007bff',
-                          },
-                        },
-                        '& .MuiInputLabel-root': {
-                          color: theme === 'dark' ? '#a8b2d1' : '#666666',
-                        },
-                        '& .MuiInputLabel-root.Mui-focused': {
-                          color: theme === 'dark' ? '#00ffff' : '#007bff',
-                        }
-                      }}
-                    />
-                    
-                    <FormControl fullWidth size="small">
-                      <InputLabel sx={labelStyle}>Type</InputLabel>
-                      <Select
-                        value={filters.type}
-                        label="Type"
-                        onChange={(e) => handleFilterChange('type', e.target.value)}
-                        sx={selectStyle}
-                      >
-                        <MenuItem value="">All Types</MenuItem>
-                        <MenuItem value="INCOME">Income</MenuItem>
-                        <MenuItem value="EXPENSE">Expense</MenuItem>
-                      </Select>
-                    </FormControl>
-                    
-                    <FormControl fullWidth size="small">
-                      <InputLabel sx={labelStyle}>Category</InputLabel>
-                      <Select
-                        value={filters.category}
-                        label="Category"
-                        onChange={(e) => handleFilterChange('category', e.target.value)}
-                        sx={selectStyle}
-                      >
-                        <MenuItem value="">All Categories</MenuItem>
-                        {filterOptions.categories.map((category) => (
-                          <MenuItem key={category} value={category}>
-                            {category}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    
-                    <FormControl fullWidth size="small">
-                      <InputLabel sx={labelStyle}>Status</InputLabel>
-                      <Select
-                        value={filters.status}
-                        label="Status"
-                        onChange={(e) => handleFilterChange('status', e.target.value)}
-                        sx={selectStyle}
-                      >
-                        <MenuItem value="">All Status</MenuItem>
-                        {filterOptions.statuses.map((status) => (
-                          <MenuItem key={status} value={status}>
-                            {status}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-
-                    <FormControl fullWidth size="small">
-                      <InputLabel sx={labelStyle}>Source</InputLabel>
-                      <Select
-                        value={filters.source}
-                        label="Source"
-                        onChange={(e) => handleFilterChange('source', e.target.value)}
-                        sx={selectStyle}
-                      >
-                        <MenuItem value="">All Sources</MenuItem>
-                        {filterOptions.sources.map((source) => (
-                          <MenuItem key={source} value={source}>
-                            {source}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-
-                    <DatePicker
-                      label="Start Date"
-                      value={filters.startDate ? new Date(filters.startDate) : null}
-                      onChange={(date) => handleFilterChange('startDate', date ? format(date, 'yyyy-MM-dd') : '')}
-                      slotProps={{ 
-                        textField: { 
-                          fullWidth: true, 
-                          size: 'small',
-                          sx: datePickerStyle
-                        } 
-                      }}
-                    />
-
-                    <DatePicker
-                      label="End Date"
-                      value={filters.endDate ? new Date(filters.endDate) : null}
-                      onChange={(date) => handleFilterChange('endDate', date ? format(date, 'yyyy-MM-dd') : '')}
-                      slotProps={{ 
-                        textField: { 
-                          fullWidth: true, 
-                          size: 'small',
-                          sx: datePickerStyle
-                        } 
-                      }}
-                    />
-
-                    <FormControl fullWidth size="small">
-                      <InputLabel sx={labelStyle}>Sort By</InputLabel>
-                      <Select
-                        value={filters.sortBy}
-                        label="Sort By"
-                        onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-                        sx={selectStyle}
-                      >
-                        <MenuItem value="-date">Date (Newest First)</MenuItem>
-                        <MenuItem value="date">Date (Oldest First)</MenuItem>
-                        <MenuItem value="-amount">Amount (High to Low)</MenuItem>
-                        <MenuItem value="amount">Amount (Low to High)</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Box>
-                )}
+                {viewMode === 'list' && renderFilterControls()}
               </CardContent>
             </Card>
           </motion.div>
@@ -2588,7 +2675,7 @@ const WalletPage = () => {
             </motion.div>
           )}
 
-          {/* Add/Edit Transaction Dialog */}
+          {/* Add/Edit Transaction Dialog - FIXED: Added refs and auto-focus */}
           <Dialog 
             open={openDialog} 
             onClose={() => setOpenDialog(false)} 
@@ -2684,6 +2771,7 @@ const WalletPage = () => {
                         onChange={(e) => handleFormChange('amount', e.target.value === '' ? '' : parseFloat(e.target.value))}
                         required
                         size="small"
+                        inputRef={amountRef}
                         InputProps={{
                           startAdornment: <AttachMoney fontSize="small" sx={{ mr: 1, color: theme === 'dark' ? '#a8b2d1' : '#666666' }} />,
                           inputProps: { min: 0, step: 0.01 }
@@ -2769,6 +2857,7 @@ const WalletPage = () => {
                         multiline
                         rows={3}
                         placeholder="Add any additional details about this transaction..."
+                        inputRef={descriptionRef}
                         sx={textFieldStyle}
                       />
                     </FormRow>
